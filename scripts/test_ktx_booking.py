@@ -396,6 +396,39 @@ class KtxBookingTests(unittest.TestCase):
         ])
         self.assertEqual(args.ncard_index, 1)
 
+    def test_command_ncard_search_fails_on_zero_index(self):
+        ncard = FakeNCard()
+        client = FakeClient([], ncards=[ncard])
+        args = argparse.Namespace(
+            dep="대전", arr="서울", date="20260512", time="100000",
+            ncard_index=0, limit=5, train_type="ktx",
+        )
+        with patch.object(ktx_booking, "_NCARD_AVAILABLE", True):
+            with patch.object(ktx_booking, "build_client", return_value=client):
+                with self.assertRaises(SystemExit) as exc:
+                    ktx_booking.command_ncard_search(args)
+        self.assertIn("ncard-index", str(exc.exception))
+
+    def test_command_ncard_list_requires_ncard_package(self):
+        with patch.object(ktx_booking, "_NCARD_AVAILABLE", False):
+            with self.assertRaises(SystemExit) as exc:
+                ktx_booking.command_ncard_list(argparse.Namespace())
+        self.assertIn("korail2-ncard", str(exc.exception))
+
+    def test_command_reserve_with_ncard_no_requires_ncard_package(self):
+        selected = FakeTrain(train_no="009", dep_time="100000", arr_time="105700",
+                             dep_name="대전", arr_name="서울")
+        train_id = ktx_booking.normalize_train(selected, index=1)["train_id"]
+        args = self.make_args(train_id, ncard_no="1234567890123456")
+        args.ncard_index = None
+        client = FakeClient([selected])
+        with patch.object(ktx_booking, "_NCARD_AVAILABLE", False):
+            with patch.object(ktx_booking, "build_client", return_value=client):
+                with self.assertRaises(SystemExit) as exc:
+                    ktx_booking.command_reserve(args)
+        self.assertIn("korail2-ncard", str(exc.exception))
+
+
     def test_command_reserve_with_ncard_no_uses_ncard_passenger(self):
         selected = FakeTrain(train_no="009", dep_time="100000", arr_time="105700",
                              dep_name="대전", arr_name="서울")
