@@ -47,6 +47,8 @@ npx --yes skills add <owner/repo> \
   --skill hwp \
   --skill rhwp-edit \
   --skill rhwp-advanced \
+  --skill express-bus-booking \
+  --skill intercity-bus-booking \
   --skill foresttrip-vacancy \
   --skill kbo-results \
   --skill kbl-results \
@@ -92,6 +94,7 @@ npx --yes skills add <owner/repo> \
   --skill k-schoollunch-menu \
   --skill korean-character-count \
   --skill court-auction-notice-search \
+  --skill donation-place-search \
   --skill k-skill-cleaner
 ```
 
@@ -102,6 +105,8 @@ npx --yes skills add <owner/repo> \
   --skill k-skill-setup \
   --skill srt-booking \
   --skill ktx-booking \
+  --skill express-bus-booking \
+  --skill intercity-bus-booking \
   --skill foresttrip-vacancy \
   --skill korean-law-search \
   --skill real-estate-search \
@@ -277,7 +282,7 @@ npm run ci
 ### Node 패키지
 
 ```bash
-npm install -g kordoc pdfjs-dist kbo-game kbl-results kleague-results lck-analytics toss-securities hipass-receipt k-lotto coupang-product-search used-car-price-search cheap-gas-nearby public-restroom-nearby korean-law-mcp market-kurly-search daiso bunjang-cli court-auction-notice-search
+npm install -g kordoc pdfjs-dist kbo-game kbl-results kleague-results lck-analytics toss-securities hipass-receipt k-lotto coupang-product-search used-car-price-search cheap-gas-nearby public-restroom-nearby korean-law-mcp market-kurly-search daiso bunjang-cli court-auction-notice-search gongsijiga-search donation-place-search
 export NODE_PATH="$(npm root -g)"
 ```
 
@@ -317,6 +322,12 @@ python3 scripts/patent_search.py --query "배터리"
 
 ```bash
 python3 scripts/scholarship_filter.py report --input scholarships.json --today 2026-04-14 --only-open-now
+```
+
+국가데이터처 KOSIS 통계 조회 helper는 설치된 `kosis-stats` skill 안의 `scripts/run_kosis_stats.py` 를 그대로 쓰면 되고, 별도 외부 패키지 없이 표준 라이브러리 `python3` 만 있으면 된다. 일반 `search`/`meta`/`data`는 기본 hosted proxy를 쓰므로 사용자 KOSIS 키가 필요 없다.
+
+```bash
+python3 kosis-stats/scripts/run_kosis_stats.py search --query "1인 가구" --text
 ```
 
 한국어 맞춤법 검사 helper는 별도 외부 패키지 없이 표준 라이브러리 `python3` 만 있으면 된다.

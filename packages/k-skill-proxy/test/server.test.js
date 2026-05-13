@@ -11,9 +11,15 @@ const {
   normalizeData4LibraryBookSearchQuery,
   normalizeData4LibraryLibrariesByBookQuery,
   normalizeData4LibraryLibrarySearchQuery,
+  normalizeKakaoLocalGeocodeQuery,
+  normalizeKosisDataQuery,
+  normalizeKosisMetaQuery,
+  normalizeKosisSearchQuery,
   proxyAirKoreaRequest,
   proxyData4LibraryRequest,
   proxyHrfcoWaterLevelRequest,
+  proxyKakaoLocalRequest,
+  proxyKosisRequest,
   proxyKmaWeatherRequest,
   proxySeoulSubwayRequest
 } = require("../src/server");
@@ -191,6 +197,189 @@ test("health endpoint reports KRX upstream status when configured", async (t) =>
 
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().upstreams.krxConfigured, true);
+});
+
+test("KOSIS normalizers map public query aliases to upstream params", () => {
+  assert.deepEqual(normalizeKosisSearchQuery({ q: "인구", limit: "3" }), {
+    method: "getList",
+    format: "json",
+    jsonVD: "Y",
+    searchNm: "인구",
+    resultCount: 3,
+    startCount: 1
+  });
+
+  assert.deepEqual(normalizeKosisMetaQuery({ table_id: "DT_1IN0001", meta_type: "itm" }), {
+    method: "getMeta",
+    type: "ITM",
+    format: "json",
+    jsonVD: "Y",
+    orgId: "101",
+    tblId: "DT_1IN0001"
+  });
+
+  assert.deepEqual(normalizeKosisDataQuery({
+    tableId: "DT_1JC1501",
+    prd_se: "y",
+    start: "2023",
+    end: "2024",
+    objL2: "00"
+  }), {
+    method: "getList",
+    format: "json",
+    jsonVD: "Y",
+    orgId: "101",
+    tblId: "DT_1JC1501",
+    itmId: "ALL",
+    prdSe: "Y",
+    startPrdDe: "2023",
+    endPrdDe: "2024",
+    objL2: "00"
+  });
+});
+
+test("KOSIS proxy injects the server-side key without accepting client apiKey", async () => {
+  const calls = [];
+  const upstream = await proxyKosisRequest({
+    operation: "search",
+    apiKey: "server-kosis-key",
+    params: {
+      method: "getList",
+      format: "json",
+      jsonVD: "Y",
+      searchNm: "인구",
+      resultCount: 1,
+      startCount: 1,
+      apiKey: "client-supplied-key"
+    },
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      return new Response("[]", {
+        status: 200,
+        headers: { "content-type": "application/json;charset=UTF-8" }
+      });
+    }
+  });
+
+  assert.equal(upstream.statusCode, 200);
+  assert.equal(calls.length, 1);
+  const url = new URL(calls[0]);
+  assert.equal(url.origin + url.pathname, "https://kosis.kr/openapi/statisticsSearch.do");
+  assert.equal(url.searchParams.get("apiKey"), "server-kosis-key");
+  assert.equal(url.searchParams.get("searchNm"), "인구");
+});
+
+test("KOSIS search endpoint stays public and caches successful upstream responses", async (t) => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    return new Response(JSON.stringify([{ TBL_ID: "DT_1JC1501", TBL_NM: "1인 가구 비율" }]), {
+      status: 200,
+      headers: { "content-type": "application/json;charset=UTF-8" }
+    });
+  };
+
+  const app = buildServer({
+    env: {
+      KOSIS_API_KEY: "server-kosis-key"
+    }
+  });
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const url = `/v1/kosis/search?q=${encodeURIComponent("1인 가구")}&limit=1&apiKey=client-key`;
+  const first = await app.inject({ method: "GET", url });
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.json()[0].TBL_ID, "DT_1JC1501");
+
+  const second = await app.inject({ method: "GET", url });
+  assert.equal(second.statusCode, 200);
+  assert.equal(second.json()[0].TBL_NM, "1인 가구 비율");
+
+  assert.equal(calls.length, 1, "second request should be served from proxy cache");
+  assert.equal(new URL(calls[0]).searchParams.get("apiKey"), "server-kosis-key");
+});
+
+test("Kakao Local geocode normalizer maps public aliases to upstream params", () => {
+  assert.deepEqual(normalizeKakaoLocalGeocodeQuery({ q: "서울역", limit: "3" }), {
+    query: "서울역",
+    size: 3,
+    page: 1
+  });
+});
+
+test("Kakao Local proxy injects the server-side REST API key", async () => {
+  const calls = [];
+  const upstream = await proxyKakaoLocalRequest({
+    endpoint: "address",
+    apiKey: "server-kakao-key",
+    params: {
+      query: "서울역",
+      size: 1,
+      apiKey: "client-supplied-key"
+    },
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), headers: options.headers });
+      return new Response(JSON.stringify({ documents: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json;charset=UTF-8" }
+      });
+    }
+  });
+
+  assert.equal(upstream.statusCode, 200);
+  assert.equal(calls.length, 1);
+  const url = new URL(calls[0].url);
+  assert.equal(url.origin + url.pathname, "https://dapi.kakao.com/v2/local/search/address.json");
+  assert.equal(url.searchParams.get("query"), "서울역");
+  assert.equal(url.searchParams.get("apiKey"), null);
+  assert.equal(calls[0].headers.authorization, "KakaoAK server-kakao-key");
+});
+
+test("Kakao Local geocode endpoint falls back from address to keyword and caches", async (t) => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    const path = new URL(url).pathname;
+    if (path.endsWith("/search/address.json")) {
+      return new Response(JSON.stringify({ documents: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json;charset=UTF-8" }
+      });
+    }
+    return new Response(JSON.stringify({ documents: [{ place_name: "서울역", x: "126.9706", y: "37.5559" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json;charset=UTF-8" }
+    });
+  };
+
+  const app = buildServer({
+    env: {
+      KAKAO_REST_API_KEY: "server-kakao-key"
+    }
+  });
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const url = `/v1/kakao-local/geocode?q=${encodeURIComponent("서울역")}&limit=1&apiKey=client-key`;
+  const first = await app.inject({ method: "GET", url });
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.json().documents[0].place_name, "서울역");
+
+  const second = await app.inject({ method: "GET", url });
+  assert.equal(second.statusCode, 200);
+  assert.equal(second.json().documents[0].x, "126.9706");
+
+  assert.equal(calls.length, 2, "second request should be served from proxy cache");
+  assert.equal(new URL(calls[0]).searchParams.get("apiKey"), null);
 });
 
 test("korean stock search endpoint stays public and caches normalized search queries", async (t) => {

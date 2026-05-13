@@ -28,6 +28,8 @@ const { resolveEducationOfficeFromNaturalLanguage } = require("./neis-office-cod
 const AIR_KOREA_UPSTREAM_BASE_URL = "http://apis.data.go.kr";
 const DATA_GO_KR_UPSTREAM_BASE_URL = "https://apis.data.go.kr";
 const DATA4LIBRARY_UPSTREAM_BASE_URL = "https://data4library.kr/api";
+const KAKAO_LOCAL_API_BASE_URL = "https://dapi.kakao.com/v2/local";
+const KOSIS_OPEN_API_BASE_URL = "https://kosis.kr/openapi";
 const SEOUL_OPEN_API_BASE_URL = "http://swopenapi.seoul.go.kr";
 const KMA_FORECAST_BASE_TIMES = ["0200", "0500", "0800", "1100", "1400", "1700", "2000", "2300"];
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -159,8 +161,10 @@ function buildConfig(env = process.env) {
     molitApiKey: trimOrNull(env.DATA_GO_KR_API_KEY),
     data4libraryAuthKey: trimOrNull(env.DATA4LIBRARY_AUTH_KEY),
     foodsafetyKoreaApiKey: trimOrNull(env.FOODSAFETYKOREA_API_KEY),
+    kakaoRestApiKey: trimOrNull(env.KAKAO_REST_API_KEY),
     keduInfoKey: trimOrNull(env.KEDU_INFO_KEY),
     krxApiKey: trimOrNull(env.KRX_API_KEY),
+    kosisApiKey: trimOrNull(env.KOSIS_API_KEY ?? env.KSKILL_KOSIS_API_KEY),
     naverSearchClientId: trimOrNull(env.NAVER_SEARCH_CLIENT_ID ?? env.NAVER_CLIENT_ID),
     naverSearchClientSecret: trimOrNull(env.NAVER_SEARCH_CLIENT_SECRET ?? env.NAVER_CLIENT_SECRET),
     cacheTtlMs: parseInteger(env.KSKILL_PROXY_CACHE_TTL_MS, 300000),
@@ -473,6 +477,126 @@ function normalizeSeoulSubwayQuery(query) {
     stationName,
     startIndex,
     endIndex
+  };
+}
+
+function normalizeKosisSearchQuery(query) {
+  const searchNm = trimOrNull(query.searchNm ?? query.search_nm ?? query.query ?? query.q);
+  if (!searchNm) {
+    throw new Error("Provide query.");
+  }
+
+  return {
+    method: "getList",
+    format: "json",
+    jsonVD: "Y",
+    searchNm,
+    resultCount: parseBoundedPositiveInteger(query.resultCount ?? query.result_count ?? query.limit, {
+      defaultValue: 20,
+      min: 1,
+      max: 5000,
+      label: "resultCount"
+    }),
+    startCount: parseBoundedPositiveInteger(query.startCount ?? query.start_count ?? query.start, {
+      defaultValue: 1,
+      min: 1,
+      max: 1000000,
+      label: "startCount"
+    })
+  };
+}
+
+function normalizeKosisMetaQuery(query) {
+  const orgId = trimOrNull(query.orgId ?? query.org_id) || "101";
+  const tblId = trimOrNull(query.tblId ?? query.tableId ?? query.table_id ?? query.tbl_id);
+  const type = (trimOrNull(query.type ?? query.metaType ?? query.meta_type) || "TBL").toUpperCase();
+
+  if (!/^\d+$/.test(orgId)) {
+    throw new Error("Provide valid orgId.");
+  }
+  if (!tblId) {
+    throw new Error("Provide tableId.");
+  }
+  if (!["TBL", "ITM", "OBJ"].includes(type)) {
+    throw new Error("metaType must be TBL, ITM, or OBJ.");
+  }
+
+  return {
+    method: "getMeta",
+    type,
+    format: "json",
+    jsonVD: "Y",
+    orgId,
+    tblId
+  };
+}
+
+function normalizeKosisDataQuery(query) {
+  const orgId = trimOrNull(query.orgId ?? query.org_id) || "101";
+  const tblId = trimOrNull(query.tblId ?? query.tableId ?? query.table_id ?? query.tbl_id);
+  const itmId = trimOrNull(query.itmId ?? query.itemId ?? query.item_id ?? query.itm_id) || "ALL";
+  const prdSe = (trimOrNull(query.prdSe ?? query.prd_se) || "").toUpperCase();
+  const startPrdDe = trimOrNull(query.startPrdDe ?? query.start_prd_de ?? query.start);
+  const endPrdDe = trimOrNull(query.endPrdDe ?? query.end_prd_de ?? query.end);
+
+  if (!/^\d+$/.test(orgId)) {
+    throw new Error("Provide valid orgId.");
+  }
+  if (!tblId) {
+    throw new Error("Provide tableId.");
+  }
+  if (!["M", "Q", "S", "Y", "F", "IR"].includes(prdSe)) {
+    throw new Error("prdSe must be one of M, Q, S, Y, F, IR.");
+  }
+  if (!startPrdDe || !endPrdDe) {
+    throw new Error("Provide start and end periods.");
+  }
+
+  const normalized = {
+    method: "getList",
+    format: "json",
+    jsonVD: "Y",
+    orgId,
+    tblId,
+    itmId,
+    prdSe,
+    startPrdDe,
+    endPrdDe
+  };
+
+  for (let index = 1; index <= 8; index += 1) {
+    const value = trimOrNull(query[`objL${index}`] ?? query[`obj_l${index}`]);
+    if (value) {
+      normalized[`objL${index}`] = value;
+    }
+  }
+  if (!Object.keys(normalized).some((key) => /^objL\d+$/.test(key))) {
+    normalized.objL1 = "ALL";
+  }
+
+  return normalized;
+}
+
+function normalizeKakaoLocalGeocodeQuery(query) {
+  const q = trimOrNull(query.q ?? query.query);
+  if (!q) {
+    throw new Error("Provide query.");
+  }
+
+  return {
+    query: q,
+    size: parseBoundedPositiveInteger(query.size ?? query.limit, {
+      defaultValue: 5,
+      min: 1,
+      max: 15,
+      label: "size"
+    }),
+    page: parseBoundedPositiveInteger(query.page, {
+      defaultValue: 1,
+      min: 1,
+      max: 45,
+      label: "page"
+    })
   };
 }
 
@@ -1033,6 +1157,154 @@ async function proxyData4LibraryRequest({
   };
 }
 
+async function proxyKosisRequest({
+  operation,
+  params = {},
+  apiKey,
+  fetchImpl = global.fetch
+}) {
+  const paths = {
+    search: "statisticsSearch.do",
+    meta: "statisticsData.do",
+    data: "Param/statisticsParameterData.do"
+  };
+  const path = paths[operation];
+
+  if (!path) {
+    return {
+      statusCode: 404,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "not_found",
+        message: "That KOSIS route is not exposed by this proxy."
+      })
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      statusCode: 503,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "upstream_not_configured",
+        message: "KOSIS_API_KEY is not configured on the proxy server."
+      })
+    };
+  }
+
+  const url = new URL(`${KOSIS_OPEN_API_BASE_URL}/${path}`);
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === "" || key === "apiKey") {
+      continue;
+    }
+    url.searchParams.set(key, String(value));
+  }
+  url.searchParams.set("apiKey", apiKey);
+
+  const response = await fetchImpl(url, {
+    headers: {
+      "user-agent": "k-skill-proxy/kosis"
+    },
+    signal: AbortSignal.timeout(20000)
+  });
+
+  return {
+    statusCode: response.status,
+    contentType: response.headers.get("content-type") || "application/json; charset=utf-8",
+    body: await response.text()
+  };
+}
+
+async function proxyKakaoLocalRequest({
+  endpoint,
+  params = {},
+  apiKey,
+  fetchImpl = global.fetch
+}) {
+  const paths = {
+    address: "search/address.json",
+    keyword: "search/keyword.json"
+  };
+  const path = paths[endpoint];
+
+  if (!path) {
+    return {
+      statusCode: 404,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "not_found",
+        message: "That Kakao Local route is not exposed by this proxy."
+      })
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      statusCode: 503,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "upstream_not_configured",
+        message: "KAKAO_REST_API_KEY is not configured on the proxy server."
+      })
+    };
+  }
+
+  const url = new URL(`${KAKAO_LOCAL_API_BASE_URL}/${path}`);
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === "" || key === "apiKey") {
+      continue;
+    }
+    url.searchParams.set(key, String(value));
+  }
+
+  const response = await fetchImpl(url, {
+    headers: {
+      authorization: `KakaoAK ${apiKey}`,
+      "user-agent": "k-skill-proxy/kakao-local"
+    },
+    signal: AbortSignal.timeout(20000)
+  });
+
+  return {
+    statusCode: response.status,
+    contentType: response.headers.get("content-type") || "application/json; charset=utf-8",
+    body: await response.text()
+  };
+}
+
+function hasKakaoLocalDocuments(body) {
+  try {
+    const payload = JSON.parse(String(body || ""));
+    return Array.isArray(payload.documents) && payload.documents.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function isSuccessfulJsonResponse(upstream) {
+  return upstream.statusCode >= 200 && upstream.statusCode < 300 && upstream.contentType.includes("json");
+}
+
+function isKosisErrorBody(body) {
+  const text = String(body || "").trim();
+  if (!text) {
+    return true;
+  }
+  if (/<error>\s*<err>/i.test(text)) {
+    return true;
+  }
+  if (!(text.startsWith("{") || text.startsWith("["))) {
+    return false;
+  }
+
+  try {
+    const payload = JSON.parse(text.replace(/([{,])\s*([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":'));
+    return Boolean(payload && !Array.isArray(payload) && typeof payload === "object" && (payload.err || payload.errCode || payload.error));
+  } catch {
+    return false;
+  }
+}
+
 async function proxyOpinetRequest({ path, params, apiKey, fetchImpl = global.fetch }) {
   if (!apiKey) {
     return {
@@ -1284,6 +1556,8 @@ function buildServer({ env = process.env, provider = null, now = () => new Date(
         foodsafetyKoreaConfigured: Boolean(config.foodsafetyKoreaApiKey),
         neisSchoolMealConfigured: Boolean(config.keduInfoKey),
         krxConfigured: Boolean(config.krxApiKey),
+        kakaoLocalConfigured: Boolean(config.kakaoRestApiKey),
+        kosisConfigured: Boolean(config.kosisApiKey),
         naverShoppingConfigured: true,
         naverSearchApiConfigured: naverSearchKeysPresent,
         naverNewsApiConfigured: naverSearchKeysPresent
@@ -1430,6 +1704,115 @@ function buildServer({ env = process.env, provider = null, now = () => new Date(
     }
 
     return payload;
+  });
+
+  async function handleKosisRoute({ operation, normalize, cacheRoute, request, reply }) {
+    let normalized;
+
+    try {
+      normalized = normalize(request.query || {});
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: "bad_request",
+        message: error.message
+      };
+    }
+
+    const cacheKey = makeCacheKey({
+      route: cacheRoute,
+      ...normalized
+    });
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      reply.code(cached.statusCode);
+      reply.header("content-type", cached.contentType);
+      return cached.body;
+    }
+
+    const upstream = await proxyKosisRequest({
+      operation,
+      params: normalized,
+      apiKey: config.kosisApiKey
+    });
+
+    if (upstream.statusCode >= 200 && upstream.statusCode < 300 && !isKosisErrorBody(upstream.body)) {
+      cache.set(cacheKey, upstream, config.cacheTtlMs);
+    }
+
+    reply.code(upstream.statusCode);
+    reply.header("content-type", upstream.contentType);
+    return upstream.body;
+  }
+
+  app.get("/v1/kosis/search", async (request, reply) => handleKosisRoute({
+    operation: "search",
+    normalize: normalizeKosisSearchQuery,
+    cacheRoute: "kosis-search",
+    request,
+    reply
+  }));
+
+  app.get("/v1/kosis/meta", async (request, reply) => handleKosisRoute({
+    operation: "meta",
+    normalize: normalizeKosisMetaQuery,
+    cacheRoute: "kosis-meta",
+    request,
+    reply
+  }));
+
+  app.get("/v1/kosis/data", async (request, reply) => handleKosisRoute({
+    operation: "data",
+    normalize: normalizeKosisDataQuery,
+    cacheRoute: "kosis-data",
+    request,
+    reply
+  }));
+
+  app.get("/v1/kakao-local/geocode", async (request, reply) => {
+    let normalized;
+
+    try {
+      normalized = normalizeKakaoLocalGeocodeQuery(request.query || {});
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: "bad_request",
+        message: error.message
+      };
+    }
+
+    const cacheKey = makeCacheKey({
+      route: "kakao-local-geocode",
+      ...normalized
+    });
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      reply.code(cached.statusCode);
+      reply.header("content-type", cached.contentType);
+      return cached.body;
+    }
+
+    const address = await proxyKakaoLocalRequest({
+      endpoint: "address",
+      params: normalized,
+      apiKey: config.kakaoRestApiKey
+    });
+    const upstream = isSuccessfulJsonResponse(address) && !hasKakaoLocalDocuments(address.body)
+      ? await proxyKakaoLocalRequest({
+          endpoint: "keyword",
+          params: normalized,
+          apiKey: config.kakaoRestApiKey
+        })
+      : address;
+
+    if (upstream.statusCode >= 200 && upstream.statusCode < 300) {
+      cache.set(cacheKey, upstream, config.cacheTtlMs);
+    }
+
+    reply.code(upstream.statusCode);
+    reply.header("content-type", upstream.contentType);
+    return upstream.body;
   });
 
   app.get("/v1/korea-weather/forecast", async (request, reply) => {
@@ -3453,7 +3836,11 @@ module.exports = {
   normalizeData4LibraryLibrarySearchQuery,
   normalizeFineDustQuery,
   normalizeHanRiverWaterLevelQuery,
+  normalizeKakaoLocalGeocodeQuery,
   normalizeKmaForecastQuery,
+  normalizeKosisDataQuery,
+  normalizeKosisMetaQuery,
+  normalizeKosisSearchQuery,
   normalizeKoreanStockLookupQuery,
   normalizeKoreanStockSearchQuery,
   normalizeLhNoticeDetailQuery,
@@ -3470,9 +3857,11 @@ module.exports = {
   proxyAirKoreaRequest,
   proxyData4LibraryRequest,
   proxyHrfcoWaterLevelRequest,
+  proxyKakaoLocalRequest,
   proxyNeisSchoolMealRequest,
   proxyNeisSchoolInfoRequest,
   proxyKmaWeatherRequest,
+  proxyKosisRequest,
   fetchNaverShoppingSearch,
   proxyOpinetRequest,
   proxySeoulSubwayRequest,

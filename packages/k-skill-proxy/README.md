@@ -18,6 +18,10 @@
 - `GET /v1/korean-stock/search`
 - `GET /v1/korean-stock/base-info`
 - `GET /v1/korean-stock/trade-info`
+- `GET /v1/kakao-local/geocode` — Kakao Local 주소/장소명 지오코딩(`KAKAO_REST_API_KEY`; caller `apiKey` 무시)
+- `GET /v1/kosis/search` — KOSIS 통계표 검색(`KOSIS_API_KEY`)
+- `GET /v1/kosis/meta` — KOSIS 통계표 메타데이터(`KOSIS_API_KEY`)
+- `GET /v1/kosis/data` — KOSIS 통계 데이터 셀 조회(`KOSIS_API_KEY`)
 - `GET /v1/naver-shopping/search` — 네이버 검색 Open API 쇼핑 검색 우선, 키가 없으면 네이버 쇼핑 공개 BFF JSON 기반 상품/가격 후보 조회
 - `GET /v1/naver-news/search` — 네이버 검색 Open API 뉴스 검색(`news.json`) 기반 최신 뉴스 기사 제목/요약/링크/발행시각 조회(`NAVER_SEARCH_CLIENT_ID`, `NAVER_SEARCH_CLIENT_SECRET` 필요)
 - `GET /v1/data4library/library-search` — 도서관 정보나루 정보공개 도서관 조회(`DATA4LIBRARY_AUTH_KEY`)
@@ -47,7 +51,9 @@
 - `KEDU_INFO_KEY` — 프록시 서버 쪽 나이스(NEIS) 교육정보 개방 포털 Open API 인증키 (`school-search`, `school-meal`)
 - `DATA4LIBRARY_AUTH_KEY` — 프록시 서버 쪽 도서관 정보나루 Open API 인증키 (`data4library/*`)
 - `FOODSAFETYKOREA_API_KEY` — 프록시 서버 쪽 식품안전나라 회수정보 live key (`mfds/food-safety/search`; 없으면 sample feed fallback)
+- `KAKAO_REST_API_KEY` — 프록시 서버 쪽 Kakao Local REST API 키 (`kakao-local/geocode`)
 - `KRX_API_KEY` — 프록시 서버 쪽 KRX Open API upstream key
+- `KOSIS_API_KEY` 또는 `KSKILL_KOSIS_API_KEY` — 프록시 서버 쪽 KOSIS Open API upstream key (`kosis/search`, `kosis/meta`, `kosis/data`)
 - `NAVER_SEARCH_CLIENT_ID`, `NAVER_SEARCH_CLIENT_SECRET` — 네이버 검색 Open API 키(`shop.json`, `news.json` 공통). 네이버 뉴스 route(`naver-news/search`)는 이 키가 **필수**이며 없으면 `503 upstream_not_configured` 를 돌려준다. 네이버 쇼핑 route(`naver-shopping/search`)는 **선택**이며 설정되면 공식 API 를 우선 사용하고, 없으면 공개 BFF JSON 파서로 fallback 한다. 공식 쇼핑 API 는 `review` 정렬을 지원하지 않아 `meta.sort_applied: "unsupported"`로 표시한다. no-key 쇼핑 fallback 은 `page`를 BFF에 전달해 해당 페이지를 고르고, `price_asc`/`price_dsc`/`review`는 선택 페이지 안에서 로컬 정렬하며, `date`는 `meta.sort_applied: "unsupported"`로 표시
 - `KSKILL_PROXY_HOST` — 기본 `127.0.0.1`
 - `KSKILL_PROXY_PORT` — 기본 `4020`
@@ -204,6 +210,33 @@ curl -fsS --get 'http://127.0.0.1:4020/v1/lh-notice/detail' \
 ```
 
 프록시는 내부적으로 `waterlevel/info.json` 으로 관측소를 해석하고, `waterlevel/list/10M/{WLOBSCD}.json` 으로 최신 수위/유량을 조회합니다. 한국 주식 route는 KRX Open API에 `AUTH_KEY` 헤더를 서버 쪽에서만 주입합니다.
+
+KOSIS 통계 조회 예시 (`KOSIS_API_KEY` 필요):
+
+```bash
+curl -fsS --get 'http://127.0.0.1:4020/v1/kosis/search' \
+  --data-urlencode 'q=1인 가구' \
+  --data-urlencode 'limit=3'
+
+curl -fsS --get 'http://127.0.0.1:4020/v1/kosis/meta' \
+  --data-urlencode 'tableId=DT_1JC1501' \
+  --data-urlencode 'metaType=ITM'
+
+curl -fsS --get 'http://127.0.0.1:4020/v1/kosis/data' \
+  --data-urlencode 'tableId=DT_1JC1501' \
+  --data-urlencode 'prdSe=Y' \
+  --data-urlencode 'start=2020' \
+  --data-urlencode 'end=2023' \
+  --data-urlencode 'objL1=ALL'
+```
+
+Kakao Local geocoding 예시 (`KAKAO_REST_API_KEY` 필요, caller `apiKey`는 무시하고 서버 쪽 키를 주입):
+
+```bash
+curl -fsS --get 'http://127.0.0.1:4020/v1/kakao-local/geocode' \
+  --data-urlencode 'q=서울역' \
+  --data-urlencode 'limit=1'
+```
 
 
 ## PM2 실행
