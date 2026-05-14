@@ -132,6 +132,13 @@
 - coupang_partners hosted fallback PR (merged): https://github.com/retention-corp/coupang_partners/pull/1
 - bunjang-cli package: https://www.npmjs.com/package/bunjang-cli
 - bunjang-cli repo: https://github.com/pinion05/bunjangcli
+- 당근 메인: https://www.daangn.com/
+- 당근 지역 검색 API: https://www.daangn.com/kr/api/v1/regions/keyword?keyword=<지역명>
+- 당근 중고거래 검색 Remix data route: https://www.daangn.com/kr/buy-sell/all/?_data=routes/kr.buy-sell._index
+- 당근부동산 검색 Remix data route: https://www.daangn.com/kr/realty/?_data=routes/kr.realty._index
+- 당근알바 검색 Remix data route: https://www.daangn.com/kr/jobs/?_data=routes/kr.jobs._index
+- 당근중고차 검색 Remix data route: https://www.daangn.com/kr/cars/?_data=routes/kr.cars._index
+- 당근부동산 상세 페이지: https://realty.daangn.com/articles/<id>
 - 블루리본 메인: https://www.bluer.co.kr/
 - 블루리본 지역 검색: https://www.bluer.co.kr/search/zone
 - 블루리본 주변 맛집 JSON: https://www.bluer.co.kr/restaurants/map
