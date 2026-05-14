@@ -23,6 +23,7 @@ const {
   proxyKakaoLocalRequest,
   proxyKosisRequest,
   proxyKmaWeatherRequest,
+  proxySeoulCityDataRequest,
   proxySeoulSubwayRequest
 } = require("../src/server");
 const { resolveEducationOfficeFromNaturalLanguage } = require("../src/neis-office-codes");
@@ -1644,6 +1645,145 @@ test("proxySeoulSubwayRequest injects API key and preserves index/station params
 
   assert.equal(result.statusCode, 200);
   assert.match(calledUrl, /\/api\/subway\/test-seoul-key\/json\/realtimeStationArrival\/2\/5\/%EA%B0%95%EB%82%A8$/);
+});
+
+test("seoul density endpoint caches successful upstream responses for normalized area queries", async (t) => {
+  const originalFetch = global.fetch;
+  let fetchCalls = 0;
+  global.fetch = async () => {
+    fetchCalls += 1;
+    return new Response(
+      JSON.stringify({
+        "SeoulRtd.citydata_ppltn": [
+          {
+            AREA_NM: "강남역",
+            AREA_CONGEST_LVL: "약간 붐빔",
+            AREA_PPLTN_MIN: "24000",
+            AREA_PPLTN_MAX: "26000",
+            PPLTN_TIME: "2026-05-14 09:30",
+            AREA_CONGEST_MSG: "사람이 몰려있을 수 있어요"
+          }
+        ],
+        RESULT: { "RESULT.CODE": "INFO-000", "RESULT.MESSAGE": "정상 처리되었습니다." }
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json;charset=UTF-8" }
+      }
+    );
+  };
+
+  const app = buildServer({
+    env: {
+      SEOUL_OPEN_API_KEY: "seoul-key",
+      KSKILL_PROXY_CACHE_TTL_MS: "60000"
+    }
+  });
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const first = await app.inject({
+    method: "GET",
+    url: "/v1/seoul-density/citydata?area=%EA%B0%95%EB%82%A8%EC%97%AD"
+  });
+  const second = await app.inject({
+    method: "GET",
+    url: "/v1/seoul-density/citydata?area=%EA%B0%95%EB%82%A8%EC%97%AD"
+  });
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(second.statusCode, 200);
+  assert.equal(fetchCalls, 1);
+  assert.equal(first.json().proxy.cache.hit, false);
+  assert.equal(second.json().proxy.cache.hit, true);
+});
+
+test("seoul density endpoint stays publicly callable without proxy auth", async (t) => {
+  const originalFetch = global.fetch;
+  let calledUrl;
+  global.fetch = async (url) => {
+    calledUrl = String(url);
+    return new Response(
+      JSON.stringify({
+        "SeoulRtd.citydata_ppltn": [{ AREA_NM: "강남역" }],
+        RESULT: { "RESULT.CODE": "INFO-000" }
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json;charset=UTF-8" }
+      }
+    );
+  };
+
+  const app = buildServer({
+    env: { SEOUL_OPEN_API_KEY: "seoul-key" }
+  });
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/v1/seoul-density/citydata?area=%EA%B0%95%EB%82%A8%EC%97%AD"
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(calledUrl, /\/seoul-key\/json\/citydata_ppltn\/1\/1\/%EA%B0%95%EB%82%A8%EC%97%AD$/);
+});
+
+test("seoul density endpoint returns 503 when proxy server lacks Seoul API key", async (t) => {
+  const app = buildServer();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/v1/seoul-density/citydata?area=%EA%B0%95%EB%82%A8%EC%97%AD"
+  });
+
+  assert.equal(response.statusCode, 503);
+  assert.equal(response.json().error, "upstream_not_configured");
+});
+
+test("seoul density endpoint returns 400 when area is missing", async (t) => {
+  const app = buildServer({ env: { SEOUL_OPEN_API_KEY: "seoul-key" } });
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/v1/seoul-density/citydata"
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.json().error, "bad_request");
+});
+
+test("proxySeoulCityDataRequest injects API key and encodes area name", async () => {
+  let calledUrl;
+  const result = await proxySeoulCityDataRequest({
+    area: "강남역",
+    apiKey: "test-seoul-key",
+    fetchImpl: async (url) => {
+      calledUrl = String(url);
+      return new Response('{"ok":true}', {
+        status: 200,
+        headers: { "content-type": "application/json;charset=UTF-8" }
+      });
+    }
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.match(calledUrl, /\/test-seoul-key\/json\/citydata_ppltn\/1\/1\/%EA%B0%95%EB%82%A8%EC%97%AD$/);
 });
 
 test("korea weather endpoint caches successful upstream responses for normalized coordinate queries", async (t) => {

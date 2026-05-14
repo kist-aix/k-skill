@@ -8,6 +8,7 @@
 - `GET /v1/fine-dust/report`
 - `GET /v1/korea-weather/forecast`
 - `GET /v1/seoul-subway/arrival`
+- `GET /v1/seoul-density/citydata` — 서울 실시간 도시데이터(`citydata_ppltn`) 핫스팟 혼잡도/추정 인구(`SEOUL_OPEN_API_KEY`)
 - `GET /v1/han-river/water-level`
 - `GET /v1/household-waste/info` — 생활쓰레기 배출정보(`DATA_GO_KR_API_KEY`; `pageNo=1`, `numOfRows=100` 필수)
 - `GET /v1/parking-lots/search` — 전국주차장정보표준데이터 기반 근처 공영주차장 검색(`DATA_GO_KR_API_KEY`)
@@ -88,6 +89,13 @@ curl -fsS -X POST 'http://127.0.0.1:4020/v1/nts-business/status' \
 ```bash
 curl -fsS --get 'http://127.0.0.1:4020/v1/seoul-subway/arrival' \
   --data-urlencode 'stationName=강남'
+```
+
+서울 실시간 혼잡도 예시 (`SEOUL_OPEN_API_KEY` 필요):
+
+```bash
+curl -fsS --get 'http://127.0.0.1:4020/v1/seoul-density/citydata' \
+  --data-urlencode 'area=강남역'
 ```
 
 한국 날씨 예시:

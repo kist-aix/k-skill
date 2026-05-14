@@ -36,6 +36,7 @@ const DATA4LIBRARY_UPSTREAM_BASE_URL = "https://data4library.kr/api";
 const KAKAO_LOCAL_API_BASE_URL = "https://dapi.kakao.com/v2/local";
 const KOSIS_OPEN_API_BASE_URL = "https://kosis.kr/openapi";
 const SEOUL_OPEN_API_BASE_URL = "http://swopenapi.seoul.go.kr";
+const SEOUL_CITYDATA_BASE_URL = "http://openapi.seoul.go.kr:8088";
 const KMA_FORECAST_BASE_TIMES = ["0200", "0500", "0800", "1100", "1400", "1700", "2000", "2300"];
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const KMA_FORECAST_READY_MINUTE = 10;
@@ -483,6 +484,14 @@ function normalizeSeoulSubwayQuery(query) {
     startIndex,
     endIndex
   };
+}
+
+function normalizeSeoulCityDataQuery(query) {
+  const area = trimOrNull(query.area ?? query.areaNm ?? query.area_nm);
+  if (!area) {
+    throw new Error("Provide area.");
+  }
+  return { area };
 }
 
 function normalizeKosisSearchQuery(query) {
@@ -1041,6 +1050,38 @@ async function proxySeoulSubwayRequest({
   const encodedStationName = encodeURIComponent(stationName);
   const url = new URL(
     `${SEOUL_OPEN_API_BASE_URL}/api/subway/${apiKey}/json/realtimeStationArrival/${startIndex}/${endIndex}/${encodedStationName}`
+  );
+
+  const response = await fetchImpl(url, {
+    signal: AbortSignal.timeout(20000)
+  });
+
+  return {
+    statusCode: response.status,
+    contentType: response.headers.get("content-type") || "application/json; charset=utf-8",
+    body: await response.text()
+  };
+}
+
+async function proxySeoulCityDataRequest({
+  area,
+  apiKey,
+  fetchImpl = global.fetch
+}) {
+  if (!apiKey) {
+    return {
+      statusCode: 503,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "upstream_not_configured",
+        message: "SEOUL_OPEN_API_KEY is not configured on the proxy server."
+      })
+    };
+  }
+
+  const encodedArea = encodeURIComponent(area);
+  const url = new URL(
+    `${SEOUL_CITYDATA_BASE_URL}/${apiKey}/json/citydata_ppltn/1/1/${encodedArea}`
   );
 
   const response = await fetchImpl(url, {
@@ -1684,6 +1725,66 @@ function buildServer({ env = process.env, provider = null, now = () => new Date(
     }
 
     const upstream = await proxySeoulSubwayRequest({
+      ...normalized,
+      apiKey: config.seoulOpenApiKey
+    });
+
+    reply.code(upstream.statusCode);
+    reply.header("content-type", upstream.contentType);
+
+    if (!upstream.contentType.includes("json")) {
+      return upstream.body;
+    }
+
+    const payload = JSON.parse(upstream.body);
+    payload.proxy = {
+      name: config.proxyName,
+      cache: {
+        hit: false,
+        ttl_ms: config.cacheTtlMs
+      },
+      requested_at: new Date().toISOString()
+    };
+
+    if (upstream.statusCode >= 200 && upstream.statusCode < 300) {
+      cache.set(cacheKey, payload, config.cacheTtlMs);
+    }
+
+    return payload;
+  });
+
+  app.get("/v1/seoul-density/citydata", async (request, reply) => {
+    let normalized;
+
+    try {
+      normalized = normalizeSeoulCityDataQuery(request.query || {});
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: "bad_request",
+        message: error.message
+      };
+    }
+
+    const cacheKey = makeCacheKey({
+      route: "seoul-density-citydata",
+      ...normalized
+    });
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return {
+        ...cached,
+        proxy: {
+          ...cached.proxy,
+          cache: {
+            hit: true,
+            ttl_ms: config.cacheTtlMs
+          }
+        }
+      };
+    }
+
+    const upstream = await proxySeoulCityDataRequest({
       ...normalized,
       apiKey: config.seoulOpenApiKey
     });
@@ -4058,6 +4159,7 @@ module.exports = {
   normalizeParkingLotSearchQuery,
   normalizeRealEstateQuery,
   normalizeRegionCodeQuery,
+  normalizeSeoulCityDataQuery,
   normalizeSeoulSubwayQuery,
   proxyAirKoreaRequest,
   proxyData4LibraryRequest,
@@ -4069,6 +4171,7 @@ module.exports = {
   proxyKosisRequest,
   fetchNaverShoppingSearch,
   proxyOpinetRequest,
+  proxySeoulCityDataRequest,
   proxySeoulSubwayRequest,
   resolveLatestKmaForecastBase,
   startServer
