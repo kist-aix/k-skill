@@ -358,18 +358,18 @@ test("public client helpers can consume injected fetch fixtures", async () => {
 
 test("getStorePickupStock builds a Bearer token and retries with a fresh token on 403", async () => {
   const originalFetch = global.fetch
-  let stockAttempts = 0
+  const stockRequests = []
   let authCallCount = 0
 
-  global.fetch = async (url) => {
+  global.fetch = async (url, init = {}) => {
     if (String(url).includes("/api/auth/request")) {
       authCallCount++
       return makeAuthResponse()
     }
 
     if (String(url).includes("/api/pd/pdh/selStrPkupStck")) {
-      stockAttempts++
-      if (stockAttempts === 1) {
+      stockRequests.push({ headers: init.headers, body: JSON.parse(init.body) })
+      if (stockRequests.length === 1) {
         return makeResponse({ success: false, message: "Unauthorized" }, { status: 403 })
       }
       return makeResponse(storePickupStockPayload)
@@ -381,8 +381,13 @@ test("getStorePickupStock builds a Bearer token and retries with a fresh token o
   try {
     const pickupStock = await getStorePickupStock({ pdNo: "1049275", strCd: "10224" })
 
-    assert.equal(stockAttempts, 2)
+    assert.equal(stockRequests.length, 2)
     assert.equal(authCallCount, 2)
+    for (const request of stockRequests) {
+      assert.match(request.headers.Authorization, /^Bearer /)
+      assert.equal(request.headers["X-DM-UID"], "test-uid-123")
+      assert.deepEqual(request.body, [{ pdNo: "1049275", strCd: "10224" }])
+    }
     assert.equal(pickupStock.quantity, 3)
     assert.equal(pickupStock.retrievalStatus, "resolved")
   } finally {
