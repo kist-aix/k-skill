@@ -1,9 +1,9 @@
+const crypto = require("node:crypto")
 const {
   BASE_API_URL,
   BASE_SEARCH_URL,
   buildSearchGoodsParams,
   normalizeOnlineStockResponse,
-  normalizePickupEligibilityResponse,
   normalizeProductIdentifier,
   normalizeSearchGoodsResponse,
   normalizeStorePickupStockResponse,
@@ -26,8 +26,35 @@ const DEFAULT_BROWSER_HEADERS = {
   "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 }
 
+const PRE_AUTH_ENC_KEY = Buffer.from("PRE_AUTH_ENC_KEY", "utf8")
+
 function selectPickupPreferredProduct(products) {
   return products.find((product) => product.pickupAvailable) || products[0]
+}
+
+async function requestText(url, options = {}) {
+  const fetchImpl = options.fetchImpl || global.fetch
+
+  if (typeof fetchImpl !== "function") {
+    throw new Error("A fetch implementation is required.")
+  }
+
+  const response = await fetchImpl(url, {
+    method: options.method || "GET",
+    headers: { ...DEFAULT_BROWSER_HEADERS, ...(options.headers || {}) },
+    signal: options.signal
+  })
+
+  const text = await response.text()
+
+  if (!response.ok) {
+    throw new DaisoRequestError(`Daiso request failed with ${response.status} for ${url}`, {
+      status: response.status,
+      url
+    })
+  }
+
+  return { text, response }
 }
 
 async function requestJson(url, options = {}) {
@@ -67,12 +94,14 @@ async function requestJson(url, options = {}) {
   return payload
 }
 
-function isPickupStockUnauthorizedError(error) {
-  return (
-    error instanceof DaisoRequestError &&
-    (error.status === 401 || error.status === 403) &&
-    (!error.payload || /unauthorized/i.test(String(error.payload.message || "")))
-  )
+async function buildBearerToken(options = {}) {
+  const { text: jwt, response } = await requestText(`${BASE_API_URL}/auth/request`, options)
+  const uid = response.headers.get("x-dm-uid") || ""
+  const iv = crypto.randomBytes(16)
+  const cipher = crypto.createCipheriv("aes-128-cbc", PRE_AUTH_ENC_KEY, iv)
+  const encrypted = Buffer.concat([cipher.update(jwt.trim(), "utf8"), cipher.final()])
+  const bearer = Buffer.from(iv).toString("base64") + Buffer.from(encrypted).toString("base64")
+  return { bearer, uid }
 }
 
 async function searchStores(query, options = {}) {
@@ -115,25 +144,28 @@ async function searchProducts(query, options = {}) {
 }
 
 async function getStorePickupStock(request, options = {}) {
+  const { bearer, uid } = await buildBearerToken(options)
+  const authHeaders = { Authorization: `Bearer ${bearer}`, "X-DM-UID": uid }
+
   try {
     const payload = await requestJson(`${BASE_API_URL}/pd/pdh/selStrPkupStck`, {
       ...options,
       method: "POST",
-      body: [
-        {
-          pdNo: String(request.pdNo),
-          strCd: String(request.strCd)
-        }
-      ]
+      headers: authHeaders,
+      body: [{ pdNo: String(request.pdNo), strCd: String(request.strCd) }]
     })
 
     return normalizeStorePickupStockResponse(payload, request)
   } catch (error) {
-    if (isPickupStockUnauthorizedError(error)) {
-      return normalizeStorePickupStockResponse(
-        error.payload || { success: false, message: "Unauthorized", status: error.status },
-        request
-      )
+    if (error instanceof DaisoRequestError && error.status === 403) {
+      const { bearer: newBearer, uid: newUid } = await buildBearerToken(options)
+      const payload = await requestJson(`${BASE_API_URL}/pd/pdh/selStrPkupStck`, {
+        ...options,
+        method: "POST",
+        headers: { Authorization: `Bearer ${newBearer}`, "X-DM-UID": newUid },
+        body: [{ pdNo: String(request.pdNo), strCd: String(request.strCd) }]
+      })
+      return normalizeStorePickupStockResponse(payload, request)
     }
 
     throw error
@@ -152,73 +184,6 @@ async function getOnlineStock(request, options = {}) {
   })
 
   return normalizeOnlineStockResponse(payload, normalizedRequest)
-}
-
-function buildPickupEligibilityKeyword(value) {
-  return String(value || "")
-    .replace(/\d+\s*호점\s*$/u, "")
-    .replace(/[(].*?[)]/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim()
-}
-
-async function getStorePickupEligibility(request, options = {}) {
-  const pdNo = String(request.pdNo || "").trim()
-  const strCd = String(request.strCd || "").trim()
-  const explicitKeyword =
-    typeof request.keyword === "string" && request.keyword.trim() ? request.keyword.trim() : null
-  const derivedKeyword = explicitKeyword || buildPickupEligibilityKeyword(request.storeName)
-  const pageSize = Number(request.pageSize || 50)
-
-  if (!pdNo) {
-    throw new Error("pdNo is required.")
-  }
-
-  if (strCd && !derivedKeyword) {
-    return {
-      pdNo,
-      strCd,
-      pickupEligible: null,
-      eligibleStoreCount: null,
-      eligibleStores: [],
-      matchedStore: null,
-      searchedKeyword: "",
-      pageSize,
-      totalCount: null,
-      retrievalStatus: "insufficient_coverage",
-      reason: "missing_search_keyword",
-      raw: null
-    }
-  }
-
-  try {
-    const payload = await requestJson(`${BASE_API_URL}/ms/msg/selPkupStr`, {
-      ...options,
-      method: "POST",
-      body: {
-        pdNo,
-        keyword: derivedKeyword || "",
-        currentPage: 1,
-        pageSize
-      }
-    })
-
-    return normalizePickupEligibilityResponse(payload, {
-      pdNo,
-      strCd,
-      keyword: derivedKeyword || "",
-      pageSize
-    })
-  } catch (error) {
-    if (error instanceof DaisoRequestError) {
-      return normalizePickupEligibilityResponse(
-        error.payload || { success: false, message: `HTTP ${error.status}` },
-        { pdNo, strCd, keyword: derivedKeyword || "", pageSize }
-      )
-    }
-
-    throw error
-  }
 }
 
 async function lookupStoreProductAvailability(options = {}) {
@@ -263,22 +228,6 @@ async function lookupStoreProductAvailability(options = {}) {
     getStorePickupStock({ pdNo: selectedProduct.pdNo, strCd: selectedStore.strCd }, options)
   ])
 
-  let pickupEligibility = null
-
-  if (
-    options.includePickupEligibility !== false &&
-    pickupStock &&
-    pickupStock.retrievalStatus === "blocked"
-  ) {
-    pickupEligibility = await getStorePickupEligibility(
-      {
-        pdNo: selectedProduct.pdNo,
-        strCd: selectedStore.strCd,
-        storeName: selectedStore.name
-      },
-      options
-    )
-  }
   const onlineStock = await onlineStockPromise
 
   return {
@@ -290,7 +239,6 @@ async function lookupStoreProductAvailability(options = {}) {
     storeDetail: storeDetailPayload.data || null,
     selectedProduct,
     pickupStock,
-    pickupEligibility,
     onlineStock
   }
 }
@@ -298,7 +246,6 @@ async function lookupStoreProductAvailability(options = {}) {
 module.exports = {
   getOnlineStock,
   getStoreDetail,
-  getStorePickupEligibility,
   getStorePickupStock,
   lookupStoreProductAvailability,
   searchProducts,
