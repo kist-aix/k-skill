@@ -1,4 +1,6 @@
 const {
+  isValidLatitude,
+  isValidLongitude,
   normalizeAnchorPanel,
   normalizeEmergencyRoomRows,
   parseCoordinateQuery,
@@ -75,6 +77,30 @@ function normalizeBoundedInteger(value, defaultValue, label, min, max) {
   return parsed;
 }
 
+function normalizeCoordinate(value, label, isValid) {
+  const parsed = Number(value);
+
+  if (!isValid(parsed)) {
+    throw new Error(`${label} must be between ${label === "latitude" ? "-90 and 90" : "-180 and 180"}.`);
+  }
+
+  return parsed;
+}
+
+function normalizeCoordinates(options = {}) {
+  const latitude = Number(options.latitude ?? options.lat);
+  const longitude = Number(options.longitude ?? options.lon);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error("latitude and longitude must be finite numbers.");
+  }
+
+  return {
+    latitude: normalizeCoordinate(latitude, "latitude", isValidLatitude),
+    longitude: normalizeCoordinate(longitude, "longitude", isValidLongitude)
+  };
+}
+
 function normalizeOrder(order) {
   const value = String(order || "distance").trim();
 
@@ -94,12 +120,7 @@ function normalizeEmergencyGradeCodes(value) {
 }
 
 function buildEmergencyRoomListRequest(options = {}) {
-  const latitude = Number(options.latitude ?? options.lat);
-  const longitude = Number(options.longitude ?? options.lon);
-
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw new Error("latitude and longitude must be finite numbers.");
-  }
+  const { latitude, longitude } = normalizeCoordinates(options);
 
   const radius = normalizeBoundedInteger(options.radius ?? options.maxDistanceKm, 3, "radius", 1, 50);
   const currentPageNum = normalizeBoundedInteger(options.currentPageNum ?? options.pageNo, 1, "currentPageNum", 1, 1000);
@@ -148,7 +169,7 @@ async function fetchPlacePanel(confirmId, options = {}) {
 
 function isRecoverablePlacePanelError(error) {
   const status = Number(error?.status);
-  return Number.isInteger(status) && status >= 400 && status < 600;
+  return status === 404 || status === 410;
 }
 
 async function resolveAnchor(locationQuery, options = {}) {
@@ -193,12 +214,7 @@ function buildMeta(payload, options, total) {
 }
 
 async function searchNearbyEmergencyRoomsByCoordinates(options = {}) {
-  const latitude = Number(options.latitude ?? options.lat);
-  const longitude = Number(options.longitude ?? options.lon);
-
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw new Error("latitude and longitude must be finite numbers.");
-  }
+  const { latitude, longitude } = normalizeCoordinates(options);
 
   const limit = normalizeBoundedInteger(options.limit, 5, "limit", 1, 50);
   const payload = await fetchEmergencyRoomList({ ...options, latitude, longitude });

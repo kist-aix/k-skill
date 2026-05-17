@@ -26,6 +26,7 @@ test("parseCoordinateQuery recognizes latitude/longitude pairs", () => {
     latitude: 37.573713,
     longitude: 126.978338
   });
+  assert.equal(parseCoordinateQuery("999, 999"), null);
   assert.equal(parseCoordinateQuery("광화문"), null);
 });
 
@@ -61,8 +62,8 @@ test("normalizeEmergencyRoomRows exposes nearby ER and inpatient bed operation f
   assert.deepEqual(items[0].bedStatus, {
     emergencyRoomOperating: true,
     inpatientBedsOperating: true,
-    traumaCenter: false,
-    pediatricSpecialty: false,
+    traumaCenter: null,
+    pediatricSpecialty: null,
     currentGeneralCareAvailable: false,
     pediatricNightCare: false,
     holidayOpen: false,
@@ -71,6 +72,64 @@ test("normalizeEmergencyRoomRows exposes nearby ER and inpatient bed operation f
   assert.equal(items[1].bedStatus.pediatricSpecialty, true);
   assert.equal(items[0].updatedAt, "2026-03-11T14:26:33+09:00");
   assert.equal(items[0].mapUrl, "https://map.kakao.com/link/map/%EA%B0%95%EB%B6%81%EC%82%BC%EC%84%B1%EB%B3%91%EC%9B%90,37.568497631233,126.967938054517");
+});
+
+test("normalizeEmergencyRoomRows preserves unknown operation flags as null", () => {
+  const payload = {
+    list: [
+      {
+        TITLE: "상태미상병원",
+        EMOGCODE: "UNKNOWN1",
+        LAT: String(ORIGIN.latitude),
+        LON: String(ORIGIN.longitude),
+        EMOGERYN: "",
+        EMOGPRYN: "UNKNOWN",
+        EMOGTRYN: "N"
+      }
+    ]
+  };
+
+  const [item] = normalizeEmergencyRoomRows(payload, ORIGIN);
+
+  assert.equal(item.bedStatus.emergencyRoomOperating, null);
+  assert.equal(item.bedStatus.inpatientBedsOperating, null);
+  assert.equal(item.bedStatus.traumaCenter, false);
+});
+
+test("normalizeEmergencyRoomRows skips invalid upstream hospital coordinates", () => {
+  const items = normalizeEmergencyRoomRows(
+    {
+      list: [
+        {
+          TITLE: "좌표오류병원",
+          EMOGCODE: "BADCOORD1",
+          LAT: "91",
+          LON: String(ORIGIN.longitude),
+          EMOGERYN: "Y"
+        },
+        {
+          TITLE: "정상좌표병원",
+          EMOGCODE: "GOODCOORD1",
+          LAT: String(ORIGIN.latitude),
+          LON: String(ORIGIN.longitude),
+          EMOGERYN: "Y"
+        }
+      ]
+    },
+    ORIGIN,
+  );
+
+  assert.deepEqual(items.map((item) => item.id), ["GOODCOORD1"]);
+});
+
+test("searchNearbyEmergencyRoomsByCoordinates rejects unknown E-Gen payload shapes", async () => {
+  await assert.rejects(
+    searchNearbyEmergencyRoomsByCoordinates({
+      ...ORIGIN,
+      fetchImpl: async () => makeResponse({ error: "blocked" })
+    }),
+    /Unexpected E-Gen emergency room payload shape/
+  );
 });
 
 test("searchNearbyEmergencyRoomsByCoordinates posts to E-Gen and returns normalized items", async () => {
@@ -135,6 +194,77 @@ test("searchNearbyEmergencyRoomsByLocationQuery resolves a Kakao anchor before q
   ]);
 });
 
+test("searchNearbyEmergencyRoomsByLocationQuery skips stale Kakao panels only", async () => {
+  const multiSearchHtml = `
+    <ul>
+      <li class="search_item base" data-id="stale" data-title="광화문">
+        <strong class="tit_g">광화문</strong>
+        <span class="txt_g">서울특별시 종로구 세종대로 172</span>
+      </li>
+      <li class="search_item base" data-id="1001" data-title="광화문">
+        <strong class="tit_g">광화문</strong>
+        <span class="txt_g">서울특별시 종로구 세종대로 172</span>
+      </li>
+    </ul>
+  `;
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const resolved = String(url);
+    calls.push(resolved);
+
+    if (resolved.startsWith("https://m.map.kakao.com/actions/searchView")) {
+      return makeResponse(multiSearchHtml, "text/html");
+    }
+
+    if (resolved === "https://place-api.map.kakao.com/places/panel3/stale") {
+      return makeResponse("gone", "text/plain", { ok: false, status: 410 });
+    }
+
+    if (resolved === "https://place-api.map.kakao.com/places/panel3/1001") {
+      return makeResponse(anchorPanel, "application/json");
+    }
+
+    if (resolved === "https://www.e-gen.or.kr/egen/retrieve_emergency_room_list.do") {
+      assert.equal(options.body.get("lat"), String(ORIGIN.latitude));
+      assert.equal(options.body.get("lon"), String(ORIGIN.longitude));
+      return makeResponse(emergencyRoomList);
+    }
+
+    throw new Error(`unexpected url: ${resolved}`);
+  };
+
+  const result = await searchNearbyEmergencyRoomsByLocationQuery("광화문", { fetchImpl });
+
+  assert.equal(result.anchor.id, "1001");
+  assert.deepEqual(calls, [
+    "https://m.map.kakao.com/actions/searchView?q=%EA%B4%91%ED%99%94%EB%AC%B8",
+    "https://place-api.map.kakao.com/places/panel3/stale",
+    "https://place-api.map.kakao.com/places/panel3/1001",
+    "https://www.e-gen.or.kr/egen/retrieve_emergency_room_list.do"
+  ]);
+});
+
+test("searchNearbyEmergencyRoomsByLocationQuery fails fast on Kakao rate limits", async () => {
+  const fetchImpl = async (url) => {
+    const resolved = String(url);
+
+    if (resolved.startsWith("https://m.map.kakao.com/actions/searchView")) {
+      return makeResponse(anchorSearchHtml, "text/html");
+    }
+
+    if (resolved === "https://place-api.map.kakao.com/places/panel3/1001") {
+      return makeResponse("rate limited", "text/plain", { ok: false, status: 429 });
+    }
+
+    throw new Error(`unexpected url: ${resolved}`);
+  };
+
+  await assert.rejects(
+    searchNearbyEmergencyRoomsByLocationQuery("광화문", { fetchImpl }),
+    (error) => error.status === 429 && /place-api\.map\.kakao\.com/.test(error.url)
+  );
+});
+
 test("searchNearbyEmergencyRoomsByCoordinates validates bounded inputs", async () => {
   await assert.rejects(
     searchNearbyEmergencyRoomsByCoordinates({ latitude: "x", longitude: 126.9 }),
@@ -148,12 +278,24 @@ test("searchNearbyEmergencyRoomsByCoordinates validates bounded inputs", async (
     searchNearbyEmergencyRoomsByCoordinates({ ...ORIGIN, radius: 0 }),
     /radius must be between 1 and 50/
   );
+  await assert.rejects(
+    searchNearbyEmergencyRoomsByCoordinates({ latitude: 91, longitude: 126.9 }),
+    /latitude must be between -90 and 90/
+  );
+  await assert.rejects(
+    searchNearbyEmergencyRoomsByCoordinates({ latitude: 37.5, longitude: 181 }),
+    /longitude must be between -180 and 180/
+  );
+  assert.throws(
+    () => buildEmergencyRoomListRequest({ latitude: -91, longitude: 126.9 }),
+    /latitude must be between -90 and 90/
+  );
 });
 
-function makeResponse(body, contentType = "application/json;charset=UTF-8") {
+function makeResponse(body, contentType = "application/json;charset=UTF-8", responseOptions = {}) {
   return {
-    ok: true,
-    status: 200,
+    ok: responseOptions.ok ?? true,
+    status: responseOptions.status ?? 200,
     headers: {
       get(name) {
         if (String(name).toLowerCase() === "content-type") {

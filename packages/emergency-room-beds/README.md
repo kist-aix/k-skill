@@ -6,7 +6,9 @@ Nearby Korean emergency-room lookup backed by E-Gen's public emergency-room sear
 
 - It resolves a user-provided location to coordinates, then calls E-Gen's public nearby emergency-room list endpoint.
 - It reports distance, hospital category, address, phone, update time, and operation flags such as emergency-room operation and inpatient-bed operation.
+- Operation flags are tri-state: `true` for upstream `Y`, `false` for upstream `N`, and `null` when E-Gen omits or changes a flag value.
 - It does **not** claim exact real-time remaining bed counts. The public E-Gen nearby list exposes operation flags, not per-hospital remaining bed numbers.
+- For emergencies, call 119 or the hospital directly. Public E-Gen/Kakao data can lag, fail, or be incomplete and is not medical advice.
 
 ## Public surfaces
 

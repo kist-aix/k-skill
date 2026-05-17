@@ -128,10 +128,14 @@ function parseCoordinateQuery(locationQuery) {
     return null;
   }
 
-  return {
-    latitude: Number(match[1]),
-    longitude: Number(match[2])
-  };
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+
+  if (!isValidCoordinatePair(latitude, longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
 }
 
 function toNumber(value) {
@@ -143,8 +147,30 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function isValidLatitude(value) {
+  return Number.isFinite(value) && value >= -90 && value <= 90;
+}
+
+function isValidLongitude(value) {
+  return Number.isFinite(value) && value >= -180 && value <= 180;
+}
+
+function isValidCoordinatePair(latitude, longitude) {
+  return isValidLatitude(latitude) && isValidLongitude(longitude);
+}
+
 function toBooleanYesNo(value) {
-  return String(value || "").trim().toUpperCase() === "Y";
+  const normalized = String(value ?? "").trim().toUpperCase();
+
+  if (normalized === "Y") {
+    return true;
+  }
+
+  if (normalized === "N") {
+    return false;
+  }
+
+  return null;
 }
 
 function buildMapUrl(name, latitude, longitude) {
@@ -186,7 +212,7 @@ function getEmergencyRoomRows(payload) {
     return payload.list;
   }
 
-  return [];
+  throw new Error("Unexpected E-Gen emergency room payload shape.");
 }
 
 function normalizeEmergencyRoomRows(payload, origin, options = {}) {
@@ -194,8 +220,8 @@ function normalizeEmergencyRoomRows(payload, origin, options = {}) {
   const longitude = Number(origin?.longitude);
   const radius = Number.isFinite(Number(options.radius ?? options.maxDistanceKm)) ? Number(options.radius ?? options.maxDistanceKm) : null;
 
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw new Error("normalizeEmergencyRoomRows requires finite origin coordinates.");
+  if (!isValidCoordinatePair(latitude, longitude)) {
+    throw new Error("normalizeEmergencyRoomRows requires valid origin coordinates.");
   }
 
   return getEmergencyRoomRows(payload)
@@ -203,7 +229,7 @@ function normalizeEmergencyRoomRows(payload, origin, options = {}) {
       const itemLatitude = toNumber(row.LAT ?? row.lat);
       const itemLongitude = toNumber(row.LON ?? row.lon);
 
-      if (!Number.isFinite(itemLatitude) || !Number.isFinite(itemLongitude)) {
+      if (!isValidCoordinatePair(itemLatitude, itemLongitude)) {
         return null;
       }
 
@@ -257,6 +283,9 @@ function normalizeEmergencyRoomRows(payload, origin, options = {}) {
 
 module.exports = {
   buildMapUrl,
+  isValidCoordinatePair,
+  isValidLatitude,
+  isValidLongitude,
   normalizeAnchorPanel,
   normalizeEmergencyRoomRows,
   parseCoordinateQuery,
