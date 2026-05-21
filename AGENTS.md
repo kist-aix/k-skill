@@ -54,4 +54,5 @@ These rules are repo-specific and apply to everything under this directory.
 - 컨테이너 이미지 빌드 정의: `packages/k-skill-proxy/Dockerfile`
 - proxy 서버 테스트: `packages/k-skill-proxy/test/server.test.js`
 - 로컬 테스트: `node packages/k-skill-proxy/src/server.js` (환경변수는 `~/.config/k-skill/secrets.env` 등에서 직접 export해서 띄운다)
-- 프로덕션 시크릿은 GCP Secret Manager에 보관되고 Cloud Run runtime에 주입된다. WIF / Secret Manager 1회 셋업과 운영 점검 절차는 [`docs/deploy-k-skill-proxy.md`](docs/deploy-k-skill-proxy.md) 참고.
+- 프로덕션 시크릿은 GCP Secret Manager에 보관되고 Cloud Run runtime에 주입된다.
+- **운영 관련 모든 절차는 [`docs/deploy-k-skill-proxy.md`](docs/deploy-k-skill-proxy.md)에 정리되어 있다.** 새 maintainer 인계를 위한 1회성 GCP/WIF 셋업, GitHub repository secrets 등록, upstream API 키 회전(rotation), 자동 배포 상태/로그/이미지 태그 확인, Cloud Run 트래픽 롤백, GitHub Actions 장애 시 로컬에서 동일한 배포를 수동으로 돌리는 비상 명령까지 전부 거기서 본다. proxy 운영 관련 어떤 질문이 들어와도 먼저 그 문서를 확인한다.
