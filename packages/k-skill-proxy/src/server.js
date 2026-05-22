@@ -499,6 +499,212 @@ function normalizeSeoulCityDataQuery(query) {
   return { area };
 }
 
+
+function parseBoundedIntegerAlias(query, keys, { defaultValue, min, max, label }) {
+  let raw;
+  for (const key of keys) {
+    if (query[key] !== undefined) {
+      raw = query[key];
+      break;
+    }
+  }
+  let value = defaultValue;
+  if (raw !== undefined) {
+    if (typeof raw !== "string" || !/^[+-]?\d+$/.test(raw)) {
+      throw new Error(`Provide valid ${label}.`);
+    }
+    value = Number(raw);
+  }
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`Provide valid ${label}.`);
+  }
+  return value;
+}
+
+function parseNumberAlias(query, keys, { min, max, label }) {
+  let raw;
+  for (const key of keys) {
+    if (query[key] !== undefined) {
+      raw = query[key];
+      break;
+    }
+  }
+  if (typeof raw !== "string" || raw.trim() === "") {
+    throw new Error(`Provide valid ${label}.`);
+  }
+  const value = Number(raw.trim());
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`Provide valid ${label}.`);
+  }
+  return value;
+}
+
+function normalizeSeoulBikePageQuery(query = {}) {
+  const startIndex = parseBoundedIntegerAlias(query, ["startIndex", "start_index", "start"], {
+    defaultValue: 1,
+    min: 1,
+    max: 100000,
+    label: "startIndex"
+  });
+  const endIndex = parseBoundedIntegerAlias(query, ["endIndex", "end_index", "end"], {
+    defaultValue: 1000,
+    min: 1,
+    max: 100000,
+    label: "endIndex"
+  });
+  if (endIndex < startIndex || endIndex - startIndex > 999) {
+    throw new Error("Provide valid startIndex and endIndex.");
+  }
+  return { startIndex, endIndex };
+}
+
+function normalizeSeoulBikeNearbyQuery(query = {}) {
+  const latitude = parseNumberAlias(query, ["latitude", "lat", "y"], {
+    min: -90,
+    max: 90,
+    label: "latitude"
+  });
+  const longitude = parseNumberAlias(query, ["longitude", "lon", "lng", "x"], {
+    min: -180,
+    max: 180,
+    label: "longitude"
+  });
+  const radiusMeters = parseBoundedIntegerAlias(query, ["radiusMeters", "radius_m", "radius"], {
+    defaultValue: 500,
+    min: 1,
+    max: 5000,
+    label: "radiusMeters"
+  });
+  const limit = parseBoundedIntegerAlias(query, ["limit"], {
+    defaultValue: 10,
+    min: 1,
+    max: 50,
+    label: "limit"
+  });
+  return { latitude, longitude, radiusMeters, limit };
+}
+
+function parseNullableNumber(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function haversineDistanceMeters(aLat, aLon, bLat, bLon) {
+  const earthRadiusMeters = 6371008.8;
+  const toRad = (degrees) => (degrees * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLon = toRad(bLon - aLon);
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+  const a = Math.sin(dLat / 2) ** 2
+    + (Math.cos(lat1) * Math.cos(lat2) * (Math.sin(dLon / 2) ** 2));
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function normalizeSeoulBikeRealtimeRow(row, origin = null) {
+  const latitude = parseNullableNumber(row.stationLatitude ?? row.latitude ?? row.lat);
+  const longitude = parseNullableNumber(row.stationLongitude ?? row.longitude ?? row.lon ?? row.lng);
+  const rackTotalCount = parseNullableNumber(row.rackTotCnt ?? row.rack_total_count);
+  const availableBikes = parseNullableNumber(row.parkingBikeTotCnt ?? row.available_bikes);
+  const sharedPercent = parseNullableNumber(row.shared ?? row.shared_percent);
+  const emptyDocks = rackTotalCount === null || availableBikes === null
+    ? null
+    : Math.max(0, rackTotalCount - availableBikes);
+  const distanceMeters = origin && latitude !== null && longitude !== null
+    ? Math.round(haversineDistanceMeters(origin.latitude, origin.longitude, latitude, longitude))
+    : null;
+
+  return {
+    station_id: row.stationId ?? row.station_id ?? null,
+    station_name: row.stationName ?? row.station_name ?? null,
+    rack_total_count: rackTotalCount,
+    available_bikes: availableBikes,
+    empty_docks: emptyDocks,
+    shared_percent: sharedPercent,
+    latitude,
+    longitude,
+    distance_m: distanceMeters
+  };
+}
+
+function extractSeoulBikeRows(payload) {
+  const status = payload && payload.rentBikeStatus;
+  if (!status || !Array.isArray(status.row)) {
+    return [];
+  }
+  return status.row;
+}
+
+function getSeoulOpenApiResultCode(result) {
+  return result?.CODE ?? result?.["RESULT.CODE"] ?? result?.code ?? null;
+}
+
+function getSeoulOpenApiResultMessage(result) {
+  return result?.MESSAGE ?? result?.["RESULT.MESSAGE"] ?? result?.message ?? null;
+}
+
+function findSeoulOpenApiResultEnvelope(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  if (payload.RESULT && typeof payload.RESULT === "object") {
+    return payload.RESULT;
+  }
+  for (const value of Object.values(payload)) {
+    if (value && typeof value === "object" && value.RESULT && typeof value.RESULT === "object") {
+      return value.RESULT;
+    }
+  }
+  return null;
+}
+
+function getSeoulOpenApiSemanticError(payload) {
+  const result = findSeoulOpenApiResultEnvelope(payload);
+  const code = getSeoulOpenApiResultCode(result);
+  if (!code) {
+    return null;
+  }
+  const normalizedCode = String(code).toUpperCase();
+  if (normalizedCode.startsWith("INFO-")) {
+    return null;
+  }
+  return {
+    code: String(code),
+    message: getSeoulOpenApiResultMessage(result) || "Seoul Open API returned an application-level error."
+  };
+}
+
+function buildSeoulBikeSemanticErrorPayload(error, config) {
+  return {
+    error: "upstream_semantic_error",
+    message: "Seoul Bike upstream returned an application-level error.",
+    upstream: {
+      code: error.code,
+      message: error.message
+    },
+    proxy: {
+      name: config.proxyName,
+      cache: { hit: false, ttl_ms: config.cacheTtlMs },
+      requested_at: new Date().toISOString()
+    }
+  };
+}
+
+function buildSeoulBikeUpstreamErrorPayload(config) {
+  return {
+    error: "upstream_error",
+    message: "Seoul Bike upstream request failed.",
+    proxy: {
+      name: config.proxyName,
+      cache: { hit: false, ttl_ms: config.cacheTtlMs },
+      requested_at: new Date().toISOString()
+    }
+  };
+}
+
 function normalizeKosisSearchQuery(query) {
   const searchNm = trimOrNull(query.searchNm ?? query.search_nm ?? query.query ?? query.q);
   if (!searchNm) {
@@ -1100,6 +1306,89 @@ async function proxySeoulCityDataRequest({
   };
 }
 
+
+function seoulOpenApiNotConfiguredResponse() {
+  return {
+    statusCode: 503,
+    contentType: "application/json; charset=utf-8",
+    body: JSON.stringify({
+      error: "upstream_not_configured",
+      message: "SEOUL_OPEN_API_KEY is not configured on the proxy server."
+    })
+  };
+}
+
+async function proxySeoulBikeDatasetRequest({
+  dataset,
+  startIndex = 1,
+  endIndex = 1000,
+  apiKey,
+  fetchImpl = global.fetch
+}) {
+  if (!apiKey) {
+    return seoulOpenApiNotConfiguredResponse();
+  }
+
+  const url = new URL(
+    `${SEOUL_CITYDATA_BASE_URL}/${apiKey}/json/${dataset}/${startIndex}/${endIndex}/`
+  );
+
+  const response = await fetchImpl(url, {
+    signal: AbortSignal.timeout(20000)
+  });
+
+  return {
+    statusCode: response.status,
+    contentType: response.headers.get("content-type") || "application/json; charset=utf-8",
+    body: await response.text()
+  };
+}
+
+async function proxySeoulBikeRealtimeRequest(options) {
+  return proxySeoulBikeDatasetRequest({ ...options, dataset: "bikeList" });
+}
+
+async function proxySeoulBikeStationsRequest(options) {
+  return proxySeoulBikeDatasetRequest({ ...options, dataset: "tbCycleStationInfo" });
+}
+
+async function fetchAllSeoulBikeRealtimeRows({ apiKey, fetchImpl = global.fetch }) {
+  const first = await proxySeoulBikeRealtimeRequest({
+    startIndex: 1,
+    endIndex: 1000,
+    apiKey,
+    fetchImpl
+  });
+  if (first.statusCode !== 200 || !first.contentType.includes("json")) {
+    return { upstream: first, rows: null };
+  }
+
+  const payload = JSON.parse(first.body);
+  const semanticError = getSeoulOpenApiSemanticError(payload);
+  if (semanticError) {
+    return { upstream: first, rows: null, semanticError };
+  }
+  const rows = extractSeoulBikeRows(payload);
+  const totalCount = Number(payload.rentBikeStatus?.list_total_count ?? rows.length);
+  const safeTotalCount = Number.isFinite(totalCount) ? Math.max(totalCount, rows.length) : rows.length;
+
+  for (let startIndex = 1001; startIndex <= safeTotalCount; startIndex += 1000) {
+    const endIndex = Math.min(startIndex + 999, safeTotalCount);
+    const next = await proxySeoulBikeRealtimeRequest({ startIndex, endIndex, apiKey, fetchImpl });
+    if (next.statusCode !== 200 || !next.contentType.includes("json")) {
+      return { upstream: next, rows: null };
+    }
+    const nextPayload = JSON.parse(next.body);
+    const nextSemanticError = getSeoulOpenApiSemanticError(nextPayload);
+    if (nextSemanticError) {
+      return { upstream: next, rows: null, semanticError: nextSemanticError };
+    }
+    rows.push(...extractSeoulBikeRows(nextPayload));
+  }
+
+  return { upstream: first, rows };
+}
+
 async function proxyKmaWeatherRequest({
   baseDate,
   baseTime,
@@ -1696,6 +1985,213 @@ function buildServer({ env = process.env, provider = null, now = () => new Date(
     };
 
     cache.set(cacheKey, payload, config.cacheTtlMs);
+    return payload;
+  });
+
+  app.get("/v1/seoul-bike/realtime", async (request, reply) => {
+    let normalized;
+
+    try {
+      normalized = normalizeSeoulBikePageQuery(request.query || {});
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: "bad_request",
+        message: error.message
+      };
+    }
+
+    const cacheKey = makeCacheKey({ route: "seoul-bike-realtime", ...normalized });
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return {
+        ...cached,
+        proxy: {
+          ...cached.proxy,
+          cache: { hit: true, ttl_ms: config.cacheTtlMs }
+        }
+      };
+    }
+
+    let upstream;
+    try {
+      upstream = await proxySeoulBikeRealtimeRequest({
+        ...normalized,
+        apiKey: config.seoulOpenApiKey
+      });
+    } catch {
+      reply.code(502);
+      return buildSeoulBikeUpstreamErrorPayload(config);
+    }
+
+    reply.code(upstream.statusCode);
+    reply.header("content-type", upstream.contentType);
+    if (!upstream.contentType.includes("json")) {
+      return upstream.body;
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(upstream.body);
+    } catch {
+      reply.code(502);
+      return buildSeoulBikeUpstreamErrorPayload(config);
+    }
+    const semanticError = getSeoulOpenApiSemanticError(payload);
+    if (semanticError) {
+      reply.code(502);
+      return buildSeoulBikeSemanticErrorPayload(semanticError, config);
+    }
+    payload.proxy = {
+      name: config.proxyName,
+      cache: { hit: false, ttl_ms: config.cacheTtlMs },
+      requested_at: new Date().toISOString()
+    };
+    if (upstream.statusCode >= 200 && upstream.statusCode < 300) {
+      cache.set(cacheKey, payload, config.cacheTtlMs);
+    }
+    return payload;
+  });
+
+  app.get("/v1/seoul-bike/stations", async (request, reply) => {
+    let normalized;
+
+    try {
+      normalized = normalizeSeoulBikePageQuery(request.query || {});
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: "bad_request",
+        message: error.message
+      };
+    }
+
+    const cacheKey = makeCacheKey({ route: "seoul-bike-stations", ...normalized });
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return {
+        ...cached,
+        proxy: {
+          ...cached.proxy,
+          cache: { hit: true, ttl_ms: config.cacheTtlMs }
+        }
+      };
+    }
+
+    let upstream;
+    try {
+      upstream = await proxySeoulBikeStationsRequest({
+        ...normalized,
+        apiKey: config.seoulOpenApiKey
+      });
+    } catch {
+      reply.code(502);
+      return buildSeoulBikeUpstreamErrorPayload(config);
+    }
+
+    reply.code(upstream.statusCode);
+    reply.header("content-type", upstream.contentType);
+    if (!upstream.contentType.includes("json")) {
+      return upstream.body;
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(upstream.body);
+    } catch {
+      reply.code(502);
+      return buildSeoulBikeUpstreamErrorPayload(config);
+    }
+    const semanticError = getSeoulOpenApiSemanticError(payload);
+    if (semanticError) {
+      reply.code(502);
+      return buildSeoulBikeSemanticErrorPayload(semanticError, config);
+    }
+    payload.proxy = {
+      name: config.proxyName,
+      cache: { hit: false, ttl_ms: config.cacheTtlMs },
+      requested_at: new Date().toISOString()
+    };
+    if (upstream.statusCode >= 200 && upstream.statusCode < 300) {
+      cache.set(cacheKey, payload, config.cacheTtlMs);
+    }
+    return payload;
+  });
+
+  app.get("/v1/seoul-bike/nearby", async (request, reply) => {
+    let normalized;
+
+    try {
+      normalized = normalizeSeoulBikeNearbyQuery(request.query || {});
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: "bad_request",
+        message: error.message
+      };
+    }
+
+    const cacheKey = makeCacheKey({ route: "seoul-bike-nearby", ...normalized });
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return {
+        ...cached,
+        proxy: {
+          ...cached.proxy,
+          cache: { hit: true, ttl_ms: config.cacheTtlMs }
+        }
+      };
+    }
+
+    let realtimeResult;
+    try {
+      realtimeResult = await fetchAllSeoulBikeRealtimeRows({
+        apiKey: config.seoulOpenApiKey
+      });
+    } catch {
+      reply.code(502);
+      return buildSeoulBikeUpstreamErrorPayload(config);
+    }
+
+    const { upstream, rows, semanticError } = realtimeResult;
+
+    reply.code(upstream.statusCode);
+    reply.header("content-type", upstream.contentType);
+    if (semanticError) {
+      reply.code(502);
+      return buildSeoulBikeSemanticErrorPayload(semanticError, config);
+    }
+    if (!upstream.contentType.includes("json") || rows === null) {
+      return upstream.body;
+    }
+
+    const origin = { latitude: normalized.latitude, longitude: normalized.longitude };
+    const items = rows
+      .map((row) => normalizeSeoulBikeRealtimeRow(row, origin))
+      .filter((row) => row.latitude !== null && row.longitude !== null && row.distance_m !== null)
+      .filter((row) => row.distance_m <= normalized.radiusMeters)
+      .sort((a, b) => a.distance_m - b.distance_m)
+      .slice(0, normalized.limit);
+
+    const payload = {
+      query: {
+        latitude: normalized.latitude,
+        longitude: normalized.longitude,
+        radius_m: normalized.radiusMeters,
+        limit: normalized.limit
+      },
+      count: items.length,
+      items,
+      proxy: {
+        name: config.proxyName,
+        cache: { hit: false, ttl_ms: config.cacheTtlMs },
+        requested_at: new Date().toISOString()
+      }
+    };
+
+    if (upstream.statusCode >= 200 && upstream.statusCode < 300) {
+      cache.set(cacheKey, payload, config.cacheTtlMs);
+    }
     return payload;
   });
 
@@ -4315,6 +4811,8 @@ module.exports = {
   normalizeParkingLotSearchQuery,
   normalizeRealEstateQuery,
   normalizeRegionCodeQuery,
+  normalizeSeoulBikeNearbyQuery,
+  normalizeSeoulBikePageQuery,
   normalizeSeoulCityDataQuery,
   normalizeSeoulSubwayQuery,
   proxyAirKoreaRequest,
@@ -4328,6 +4826,8 @@ module.exports = {
   proxyKstartupRequest,
   fetchNaverShoppingSearch,
   proxyOpinetRequest,
+  proxySeoulBikeRealtimeRequest,
+  proxySeoulBikeStationsRequest,
   proxySeoulCityDataRequest,
   proxySeoulSubwayRequest,
   resolveLatestKmaForecastBase,
