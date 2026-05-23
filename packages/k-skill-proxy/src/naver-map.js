@@ -49,6 +49,18 @@ function parseCoordPair(value, label) {
   return `${lng},${lat}`;
 }
 
+function createNaverMapHttpError(serviceName, responseStatus, bodyText) {
+  const error = new Error(`Naver Maps ${serviceName} upstream returned an error.`);
+  error.code = "upstream_error";
+  const isAuthError = responseStatus === 401 || responseStatus === 403;
+  error.statusCode = isAuthError ? 503 : 502;
+  error.upstreamStatusCode = responseStatus;
+  if (!isAuthError) {
+    error.upstreamBodySnippet = bodyText.slice(0, 200);
+  }
+  return error;
+}
+
 function normalizeNaverMapDirectionsQuery(query) {
   const start = parseCoordPair(query.start ?? query.from ?? query.origin, "start");
   const goal = parseCoordPair(query.goal ?? query.to ?? query.destination, "goal");
@@ -180,12 +192,7 @@ async function fetchNaverMapDirections({
   const contentType = response.headers.get("content-type") || "application/json; charset=utf-8";
 
   if (response.status < 200 || response.status >= 300) {
-    const error = new Error("Naver Maps directions upstream returned an error.");
-    error.code = "upstream_error";
-    error.statusCode = response.status === 401 || response.status === 403 ? 503 : 502;
-    error.upstreamStatusCode = response.status;
-    error.upstreamBodySnippet = text.slice(0, 200);
-    throw error;
+    throw createNaverMapHttpError("directions", response.status, text);
   }
 
   let body;
@@ -266,12 +273,7 @@ async function fetchNaverMapGeocode({
   const contentType = response.headers.get("content-type") || "application/json; charset=utf-8";
 
   if (response.status < 200 || response.status >= 300) {
-    const error = new Error("Naver Maps geocode upstream returned an error.");
-    error.code = "upstream_error";
-    error.statusCode = response.status === 401 || response.status === 403 ? 503 : 502;
-    error.upstreamStatusCode = response.status;
-    error.upstreamBodySnippet = text.slice(0, 200);
-    throw error;
+    throw createNaverMapHttpError("geocode", response.status, text);
   }
 
   let body;
@@ -340,12 +342,7 @@ async function fetchNaverMapReverseGeocode({
   const contentType = response.headers.get("content-type") || "application/json; charset=utf-8";
 
   if (response.status < 200 || response.status >= 300) {
-    const error = new Error("Naver Maps reverse-geocode upstream returned an error.");
-    error.code = "upstream_error";
-    error.statusCode = response.status === 401 || response.status === 403 ? 503 : 502;
-    error.upstreamStatusCode = response.status;
-    error.upstreamBodySnippet = text.slice(0, 200);
-    throw error;
+    throw createNaverMapHttpError("reverse-geocode", response.status, text);
   }
 
   let body;

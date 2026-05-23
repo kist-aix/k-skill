@@ -4241,9 +4241,11 @@ function buildServer({ env = process.env, provider = null, now = () => new Date(
       };
       if (error.upstreamStatusCode) {
         payload.upstream = {
-          status_code: error.upstreamStatusCode,
-          body_snippet: error.upstreamBodySnippet || null
+          status_code: error.upstreamStatusCode
         };
+        if (error.upstreamBodySnippet) {
+          payload.upstream.body_snippet = error.upstreamBodySnippet;
+        }
       }
       return payload;
     }

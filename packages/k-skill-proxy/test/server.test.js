@@ -860,10 +860,59 @@ test("Naver Map directions endpoint surfaces upstream semantic failures as 502 w
   assert.equal(calls.length, 2, "semantic failures must not be cached");
 });
 
-test("Naver Map directions endpoint sanitizes upstream auth errors as 503 without leaking the body", async (t) => {
+test("Naver Map endpoints sanitize upstream auth errors as 503 without leaking the body", async (t) => {
   const originalFetch = global.fetch;
-  global.fetch = async () => new Response("Authentication Failed", {
-    status: 401,
+  let upstreamStatus = 401;
+  global.fetch = async () => new Response(`Authentication Failed: ${upstreamStatus} secret diagnostic`, {
+    status: upstreamStatus,
+    headers: { "content-type": "text/plain" }
+  });
+
+  const app = buildServer({
+    env: {
+      NAVER_MAP_CLIENT_ID: "id",
+      NAVER_MAP_CLIENT_SECRET: "secret"
+    }
+  });
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const cases = [
+    {
+      upstreamStatus: 401,
+      url: "/v1/naver-map/directions?start=126.9,37.5&goal=127.0,37.5"
+    },
+    {
+      upstreamStatus: 403,
+      url: "/v1/naver-map/geocode?q=%EC%84%9C%EC%9A%B8%EC%97%AD"
+    },
+    {
+      upstreamStatus: 401,
+      url: "/v1/naver-map/reverse-geocode?coords=126.9,37.5"
+    }
+  ];
+
+  for (const testCase of cases) {
+    upstreamStatus = testCase.upstreamStatus;
+    const response = await app.inject({ method: "GET", url: testCase.url });
+    assert.equal(response.statusCode, 503);
+    const body = response.json();
+    assert.equal(body.error, "upstream_error");
+    assert.equal(body.upstream.status_code, testCase.upstreamStatus);
+    const serialized = JSON.stringify(body);
+    assert.ok(!serialized.includes("Authentication Failed"));
+    assert.ok(!serialized.includes("secret diagnostic"));
+    assert.equal(body.upstream.body_snippet, undefined);
+  }
+});
+
+test("Naver Map directions endpoint keeps non-auth upstream snippets for diagnostics", async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response("Transient upstream diagnostic", {
+    status: 500,
     headers: { "content-type": "text/plain" }
   });
 
@@ -883,12 +932,11 @@ test("Naver Map directions endpoint sanitizes upstream auth errors as 503 withou
     method: "GET",
     url: "/v1/naver-map/directions?start=126.9,37.5&goal=127.0,37.5"
   });
-  assert.equal(response.statusCode, 503);
+
+  assert.equal(response.statusCode, 502);
   const body = response.json();
-  assert.equal(body.error, "upstream_error");
-  assert.equal(body.upstream.status_code, 401);
-  // body snippet is truncated to 200 chars; assertion focus is no key leak
-  assert.ok(!JSON.stringify(body).includes("id") || true);
+  assert.equal(body.upstream.status_code, 500);
+  assert.equal(body.upstream.body_snippet, "Transient upstream diagnostic");
 });
 
 test("Naver Map geocode endpoint injects Naver keys and forwards query, count, and language", async (t) => {
