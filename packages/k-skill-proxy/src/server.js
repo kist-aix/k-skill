@@ -3597,3 +3597,60 @@ module.exports = {
   resolveLatestKmaForecastBase,
   startServer
 };
+
+
+
+// startup-support API routes
+router.get('/v1/startup-support/list', async (req, res) => {
+  try {
+    // Implementation will be added
+    res.json({
+      programs: [],
+      message: 'startup-support endpoint ready'
+    });
+  } catch (error) {
+    console.error('startup-support list error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/v1/startup-support/detail/:program_id', async (req, res) => {
+  try {
+    const program_id = req.params.program_id;
+    // Implementation will be added
+    res.json({
+      program: null,
+      message: 'startup-support detail endpoint ready'
+    });
+  } catch (error) {
+    console.error('startup-support detail error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/v1/startup-support/region/:region', async (req, res) => {
+  try {
+    const region = req.params.region;
+    // Implementation will be added
+    res.json({
+      programs: [],
+      message: 'startup-support region endpoint ready'
+    });
+  } catch (error) {
+    console.error('startup-support region error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/v1/startup-support/deadline', async (req, res) => {
+  try {
+    // Implementation will be added
+    res.json({
+      programs: [],
+      message: 'startup-support deadline endpoint ready'
+    });
+  } catch (error) {
+    console.error('startup-support deadline error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
