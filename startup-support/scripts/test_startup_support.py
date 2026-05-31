@@ -160,6 +160,7 @@ class TestStartupSupport(unittest.TestCase):
 
         # 결과 확인
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result['title'], '서울시 청년 스타트업 창업 지원금')
 
     @patch('startup_support.StartupSupportAPI._get_region_detail')
@@ -173,6 +174,7 @@ class TestStartupSupport(unittest.TestCase):
 
         # 결과 확인
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result['title'], '경기도 MVP 지원사업')
 
     def test_parse_program_from_data_go_kr(self):
@@ -198,6 +200,7 @@ class TestStartupSupport(unittest.TestCase):
 
         # 결과 확인
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result['title'], '테스트 지원사업')
         self.assertEqual(result['region'], '서울특별시')
         self.assertEqual(result['support_type'], '보조금')
@@ -226,6 +229,7 @@ class TestStartupSupport(unittest.TestCase):
 
         # 결과 확인
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result['title'], '테스트 지원사업')
         self.assertEqual(result['organization'], '경기도 창업진흥원')
         self.assertEqual(result['support_type'], '융자')

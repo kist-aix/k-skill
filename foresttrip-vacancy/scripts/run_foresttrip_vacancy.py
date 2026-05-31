@@ -160,8 +160,8 @@ def check_dependencies(*, launch_browser: bool = True) -> None:
     if sys.version_info < (3, 9):
         raise SystemExit("python 3.9+ is required")
     try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import Error as PlaywrightError  # type: ignore[reportMissingImports]
+        from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
     except ImportError as exc:
         raise SystemExit(
             "playwright is required. Install with: python3 -m pip install playwright"
@@ -210,8 +210,8 @@ def save_session_cache(path: Path, session: Session) -> None:
 
 def bootstrap_session(*, forest_id: str, forest_pw: str, ttl_sec: int = 600) -> Session:
     try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import Error as PlaywrightError  # type: ignore[reportMissingImports]
+        from playwright.sync_api import sync_playwright  # type: ignore[reportMissingImports]
     except ImportError as exc:
         raise SystemExit(
             "playwright is required. Install with: python3 -m pip install playwright "
@@ -380,9 +380,12 @@ def fetch_one(
 
 
 def is_available(row: dict[str, Any]) -> bool:
+    count_value = row.get("rsrvtCnt")
+    if count_value is None:
+        return False
     try:
-        reserved_count = int(row.get("rsrvtCnt"))
-    except (TypeError, ValueError):
+        reserved_count = int(count_value)
+    except ValueError:
         return False
     return row.get("rsrvtAvail") == "Y" and reserved_count == 0
 
