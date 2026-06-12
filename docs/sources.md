@@ -18,6 +18,9 @@
 - KBL 일정/결과 API: https://api.kbl.or.kr/match/list
 - KBL 팀 순위 API: https://api.kbl.or.kr/league/rank/team
 - tossinvest-cli: https://github.com/JungHoonGhae/tossinvest-cli
+- 토스증권 공식 Open API 문서: https://developers.tossinvest.com/docs
+- 토스증권 공식 Open API OpenAPI JSON (source of truth): https://openapi.tossinvest.com/openapi-docs/latest/openapi.json
+- 토스증권 공식 Open API 개요: https://openapi.tossinvest.com/openapi-docs/overview.md — 서버 host `https://openapi.tossinvest.com`. OAuth2 Client Credentials(`POST /oauth2/token`) 토큰으로 호출하며, 계좌·자산·주문 API는 `X-Tossinvest-Account` 헤더가 추가로 필요하다. 사용자별 민감 자격증명이므로 `k-skill-proxy` 가 아니라 사용자 환경에서 직접 호출한다.
 - 하이패스 메인: https://www.hipass.co.kr/main.do
 - 하이패스 로그인: https://www.hipass.co.kr/comm/lginpg.do
 - 하이패스 사용내역 조회 진입: https://www.hipass.co.kr/usepculr/InitUsePculrTabSearch.do
@@ -90,7 +93,7 @@
 - LH 임대공고문 목록 endpoint: http://apis.data.go.kr/B552555/lhLeaseNoticeInfo1/lhLeaseNoticeInfo1
 - LH 임대공고문 상세(공급정보) endpoint: http://apis.data.go.kr/B552555/lhLeaseNoticeDtlInfo1/getLeaseNoticeDtlInfo1
 - LH 청약 샘플 reference 구현(heereal/Bunyang_MoeumZip): https://github.com/heereal/Bunyang_MoeumZip
-- beopmang: https://api.beopmang.org
+- 법제처 국가법령정보 공동활용 Open API (k-skill-proxy `/v1/korean-law/*` upstream): https://open.law.go.kr — DRF `lawSearch.do` (검색) / `lawService.do` (본문)
 - `silver-flight-group/kakaocli`: https://github.com/silver-flight-group/kakaocli
 - KakaoTalk Mac 설치 참고(`mas`): https://velog.io/@bonjugi/%EB%A7%A5%EB%B6%81-M1%EC%97%90-homebrew%EB%A1%9C-node-vscode-%EC%B9%B4%EC%B9%B4%EC%98%A4%ED%86%A1-%EC%84%A4%EC%B9%98%ED%95%98%EA%B8%B0
 - 동행복권 로또 결과 페이지: https://www.dhlottery.co.kr/lt645/result

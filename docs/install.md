@@ -129,19 +129,7 @@ npx --yes skills add <owner/repo> \
   --skill fine-dust-location
 ```
 
-`korean-law-search` 는 skill 설치 후 upstream CLI/MCP도 준비해야 한다.
-
-- 로컬 CLI/MCP 경로는 `LAW_OC` 를 채운다.
-- remote endpoint는 `LAW_OC` 없이 `url`만 등록한다.
-- 기존 `korean-law-mcp` 경로가 실패하면 `법망`(`https://api.beopmang.org`) fallback을 사용한다.
-
-```bash
-npm install -g korean-law-mcp
-export LAW_OC=your-api-key
-korean-law list
-```
-
-로컬 설치가 막히면 `https://korean-law-mcp.fly.dev/mcp` remote endpoint를 MCP 클라이언트에 등록한다. 그 경로도 응답하지 않거나 서비스 장애가 나면 `https://api.beopmang.org/mcp` 또는 `https://api.beopmang.org/api/v4/law?action=search` 를 fallback으로 사용한다.
+`korean-law-search` 는 별도 설치 없이 기본 hosted proxy(`k-skill-proxy.nomadamas.org`)를 통해 바로 사용할 수 있다. 사용자 쪽 `LAW_OC` 가 불필요하다. proxy의 `/v1/korean-law/search` · `/v1/korean-law/detail` endpoint가 법제처(국가법령정보센터) 공식 Open API(`open.law.go.kr`)를 감싸며, 설계는 `https://github.com/chrisryugj/korean-law-mcp` 를 참고했다. 운영자만 proxy 서버에 `LAW_OC` 를 채운다(무료 발급: `https://open.law.go.kr`). 자세한 사용법은 [한국 법령 검색 가이드](features/korean-law-search.md)를 본다.
 
 `real-estate-search` 는 별도 설치 없이 기본 hosted proxy(`k-skill-proxy.nomadamas.org`)를 통해 바로 사용할 수 있다. 사용자 쪽 `DATA_GO_KR_API_KEY` 가 불필요하다. 원본 참고: `https://github.com/tae0y/real-estate-mcp/tree/main`. 자세한 사용법은 [한국 부동산 실거래가 조회 가이드](features/real-estate-search.md)를 본다.
 
@@ -337,6 +325,14 @@ HWP Node API 예시는 전역 `NODE_PATH` 대신 로컬 프로젝트에 `npm ins
 brew install silver-flight-group/tap/kakaocli
 brew tap JungHoonGhae/tossinvest-cli
 brew install tossctl
+```
+
+`toss-securities` 스킬은 공식 토스증권 Open API를 우선 사용한다. 공식 경로를 쓰려면 발급받은 자격증명을 사용자 환경변수로 둔다(공유 프록시로 보내지 않고 토스 서버로 직접 호출한다). `tossctl` 설치는 공식 credentials가 없을 때의 fallback 경로용이다.
+
+```bash
+export TOSSINVEST_CLIENT_ID=...        # 필수
+export TOSSINVEST_CLIENT_SECRET=...    # 필수
+export TOSSINVEST_ACCOUNT=...          # 선택, 계좌·자산·주문조회 시 X-Tossinvest-Account
 ```
 
 ### Python 패키지

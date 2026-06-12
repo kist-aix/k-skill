@@ -386,6 +386,25 @@ test("lck-analytics docs and skill credit the original author and reference repo
   assert.match(sources, /https:\/\/github\.com\/jerjangmin\/share\/tree\/main\/SKILL\/lck-analytics/);
 });
 
+test("repository docs advertise the korean-humanizer skill and credit im-not-ai and happy-nut", () => {
+  const readme = read("README.md");
+  const skill = read(path.join("korean-humanizer", "SKILL.md"));
+  const featureDoc = read(path.join("docs", "features", "korean-humanizer.md"));
+  const taxonomy = read(path.join("korean-humanizer", "references", "ai-tell-taxonomy.md"));
+
+  assert.match(readme, /\| 한국어 AI 윤문 \| `korean-humanizer` \|/);
+  assert.match(readme, /\[한국어 AI 윤문 가이드\]\(docs\/features\/korean-humanizer\.md\)/);
+
+  for (const doc of [skill, featureDoc, taxonomy]) {
+    assert.match(doc, /https:\/\/github\.com\/epoko77-ai\/im-not-ai/);
+  }
+  for (const doc of [skill, featureDoc]) {
+    assert.match(doc, /happy-nut/);
+  }
+  assert.match(skill, /S1|S2|S3/);
+  assert.match(skill, /references\/ai-tell-taxonomy\.md/);
+});
+
 test("repository docs advertise the korean-spell-check skill and usage constraints", () => {
   const readme = read("README.md");
   const install = read(path.join("docs", "install.md"));
@@ -1832,7 +1851,7 @@ test("repository docs advertise the hipass-receipt skill across the documented s
   assert.match(sources, /https:\/\/www\.hipass\.co\.kr\/html\/guide\/siteguide_6\.jsp/);
 });
 
-test("toss-securities skill documents the tossctl install, auth, and read-only workflow", () => {
+test("toss-securities skill documents the official Open API and tossctl fallback workflow", () => {
   const skillPath = path.join(repoRoot, "toss-securities", "SKILL.md");
 
   assert.ok(fs.existsSync(skillPath), "expected toss-securities/SKILL.md to exist");
@@ -1843,6 +1862,12 @@ test("toss-securities skill documents the tossctl install, auth, and read-only w
   assert.match(skill, /^name: toss-securities$/m);
 
   for (const doc of [skill, featureDoc]) {
+    // Official Open API path (primary).
+    assert.match(doc, /openapi\.tossinvest\.com|developers\.tossinvest\.com/);
+    assert.match(doc, /TOSSINVEST_CLIENT_ID/);
+    assert.match(doc, /X-Tossinvest-Account/);
+    assert.match(doc, /\/oauth2\/token/);
+    // tossctl fallback path (retained).
     assert.match(doc, /tossctl/);
     assert.match(doc, /JungHoonGhae\/tossinvest-cli/);
     assert.match(doc, /auth login/);
@@ -1881,9 +1906,10 @@ test("hipass-receipt skill documents the logged-in browser session contract", ()
   assert.match(packageReadme, /playwright-core/);
 });
 
-test("toss-securities package exposes safe read-only tossctl helpers", () => {
+test("toss-securities package exposes safe read-only official + tossctl helpers", () => {
   const pkg = require(path.join(repoRoot, "packages", "toss-securities", "src", "index.js"));
 
+  // tossctl fallback wrapper (retained).
   assert.equal(typeof pkg.buildReadOnlyCommand, "function");
   assert.equal(typeof pkg.runReadOnlyCommand, "function");
   assert.equal(typeof pkg.getAccountSummary, "function");
@@ -1891,6 +1917,20 @@ test("toss-securities package exposes safe read-only tossctl helpers", () => {
   assert.equal(typeof pkg.getQuote, "function");
   assert.equal(typeof pkg.getQuoteBatch, "function");
   assert.equal(typeof pkg.listWatchlist, "function");
+
+  // Official Open API client (primary).
+  assert.equal(typeof pkg.issueAccessToken, "function");
+  assert.equal(typeof pkg.getPrices, "function");
+  assert.equal(typeof pkg.getHoldings, "function");
+  assert.equal(typeof pkg.getBuyingPower, "function");
+  assert.equal(typeof pkg.listOfficialAccounts, "function");
+  assert.equal(typeof pkg.TossApiError, "function");
+  assert.equal(typeof pkg.TossCredentialsError, "function");
+
+  // Read-only safety contract: no order mutation helpers.
+  assert.equal(pkg.placeOrder, undefined);
+  assert.equal(pkg.modifyOrder, undefined);
+  assert.equal(pkg.cancelOrder, undefined);
 });
 
 test("hipass-receipt package exposes fixture-friendly query, parse, and session helpers", () => {
@@ -1903,9 +1943,14 @@ test("hipass-receipt package exposes fixture-friendly query, parse, and session 
   assert.equal(typeof pkg.buildReceiptRequest, "function");
 });
 
-test("toss-securities package README stays aligned with the read-only tossctl wrapper contract", () => {
+test("toss-securities package README stays aligned with the official-first read-only contract", () => {
   const packageReadme = read(path.join("packages", "toss-securities", "README.md"));
 
+  // Official Open API path (primary).
+  assert.match(packageReadme, /official.*Open API|공식 Open API/i);
+  assert.match(packageReadme, /TOSSINVEST_CLIENT_ID/);
+  assert.match(packageReadme, /X-Tossinvest-Account/);
+  // tossctl fallback path (retained).
   assert.match(packageReadme, /read-only tossctl wrapper/i);
   assert.match(packageReadme, /brew tap JungHoonGhae\/tossinvest-cli/);
   assert.match(packageReadme, /account summary/);
@@ -1963,7 +2008,7 @@ test("package-lock captures the toss-securities workspace metadata for npm ci", 
   assert.equal(packageLock.packages["packages/toss-securities"].engines.node, ">=18");
 });
 
-test("repository docs advertise the korean-law-search skill with mode-specific korean-law-mcp setup guidance", () => {
+test("repository docs advertise the korean-law-search skill via k-skill-proxy", () => {
   const readme = read("README.md");
   const install = read(path.join("docs", "install.md"));
   const setup = read(path.join("docs", "setup.md"));
@@ -1979,26 +2024,30 @@ test("repository docs advertise the korean-law-search skill with mode-specific k
   assert.match(readme, /\[한국 법령 검색 가이드\]\(docs\/features\/korean-law-search\.md\)/);
   assert.match(readme, /\| 한국 법령 검색 \| .* \| 불필요 \|/);
   assert.match(install, /--skill korean-law-search/);
-  assert.match(install, /로컬 CLI\/MCP 경로는 `LAW_OC`/);
-  assert.match(install, /remote endpoint는 `LAW_OC` 없이 `url`만/);
-  assert.match(setup, /한국 법령 검색의 로컬 CLI\/MCP 경로용 `LAW_OC`/);
-  assert.match(setup, /remote MCP endpoint는 사용자 `LAW_OC` 없이 `url`만으로 연결/);
-  assert.match(featureDoc, /로컬 CLI 또는 로컬 MCP server 경로는 `LAW_OC`/);
-  assert.match(featureDoc, /remote MCP endpoint는 사용자 `LAW_OC` 없이 `url`만으로 연결/);
-  assert.match(setupSkill, /로컬 한국 법령 검색: `LAW_OC` \+ `korean-law-mcp`/);
-  assert.match(setupSkill, /remote endpoint: 사용자 `LAW_OC` 없이 `url`만 등록/);
+  assert.match(install, /k-skill-proxy\.nomadamas\.org/);
+  assert.match(install, /운영자만 proxy 서버에 `LAW_OC`/);
+  assert.match(setup, /한국 법령 검색은 기본 hosted proxy/);
+  assert.match(setup, /self-host proxy 운영자만 서버 환경변수 `LAW_OC`/);
+  assert.match(featureDoc, /\/v1\/korean-law\/search/);
+  assert.match(featureDoc, /\/v1\/korean-law\/detail/);
+  assert.match(setupSkill, /한국 법령 검색은 기본 hosted proxy/);
+  assert.match(setupSkill, /운영자만 서버 환경변수 `LAW_OC`/);
 
   for (const doc of [setup, security, setupSkill]) {
     assert.match(doc, /LAW_OC/);
-    assert.match(doc, /korean-law-mcp/);
+    assert.match(doc, /k-skill-proxy/);
   }
 
   assert.match(sources, /korean-law-mcp: https:\/\/github\.com\/chrisryugj\/korean-law-mcp/);
-  assert.match(sources, /beopmang: https:\/\/api\.beopmang\.org/);
   assert.match(roadmap, /한국 법령 검색 스킬 출시/);
+
+  for (const doc of [readme, install, setup, security, setupSkill, sources, featureDoc]) {
+    assert.doesNotMatch(doc, /법망|beopmang/i);
+    assert.doesNotMatch(doc, /api\.beopmang\.org/);
+  }
 });
 
-test("korean-law-search skill keeps korean-law-mcp-first guidance while documenting the approved Beopmang fallback", () => {
+test("korean-law-search skill is proxy-first and drops the Beopmang fallback", () => {
   const skillPath = path.join(repoRoot, "korean-law-search", "SKILL.md");
   const featureDoc = read(path.join("docs", "features", "korean-law-search.md"));
   const examplesSecrets = read(path.join("examples", "secrets.env.example"));
@@ -2015,30 +2064,24 @@ test("korean-law-search skill keeps korean-law-mcp-first guidance while document
   const doneSection = doneSectionMatch[1];
 
   for (const doc of [skill, featureDoc]) {
-    assert.match(doc, /korean-law-mcp.*먼저|먼저.*korean-law-mcp|항상 `korean-law-mcp`를 먼저 사용/u);
-    assert.match(doc, /npm install -g korean-law-mcp/);
-    assert.match(doc, /로컬 CLI 또는 로컬 MCP server 경로는 `LAW_OC`/);
-    assert.match(doc, /remote MCP endpoint는 사용자 `LAW_OC` 없이 `url`만으로 연결/);
+    assert.match(doc, /k-skill-proxy\.nomadamas\.org/);
+    assert.match(doc, /\/v1\/korean-law\/search/);
+    assert.match(doc, /\/v1\/korean-law\/detail/);
+    assert.match(doc, /target=law/);
+    assert.match(doc, /target=prec/);
     assert.match(doc, /open\.law\.go\.kr/);
-    assert.match(doc, /search_law/);
-    assert.match(doc, /get_law_text/);
-    assert.match(doc, /search_precedents/);
-    assert.match(doc, /search_interpretations/);
-    assert.match(doc, /search_ordinance/);
-    assert.match(doc, /https:\/\/korean-law-mcp\.fly\.dev\/mcp/);
-    assert.match(doc, /법망|Beopmang/i);
-    assert.match(doc, /https:\/\/api\.beopmang\.org/);
-    assert.match(doc, /fallback/i);
-    assert.match(doc, /MCP/i);
-    assert.match(doc, /CLI/i);
+    assert.match(doc, /github\.com\/chrisryugj\/korean-law-mcp/);
+    assert.match(doc, /KSKILL_PROXY_BASE_URL/);
+    assert.match(doc, /LAW_OC/);
+    assert.doesNotMatch(doc, /법망|beopmang/i);
+    assert.doesNotMatch(doc, /api\.beopmang\.org/);
+    assert.doesNotMatch(doc, /npm install -g korean-law-mcp/);
     assert.doesNotMatch(doc, /packages\/korean-law-search/);
     assert.doesNotMatch(doc, /python-packages\/korean-law-search/);
   }
 
-  assert.match(doneSection, /search_interpretations/);
-  assert.match(doneSection, /search_ordinance/);
-  assert.match(doneSection, /법망|Beopmang/i);
-  assert.match(doneSection, /fallback/i);
+  assert.match(doneSection, /target=prec/);
+  assert.match(doneSection, /target=ordin/);
 
   assert.doesNotMatch(
     featureDoc,
