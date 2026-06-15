@@ -5670,6 +5670,272 @@ test("K-Startup integer fields reject non-numeric input before upstream call", a
   assert.equal(called, false, "upstream must not be called for any invalid integer input");
 });
 
+// ---------------------------------------------------------------------------
+// Business due-diligence keyed routes: national pension, FSC corp, G2B sanction
+// ---------------------------------------------------------------------------
+
+const {
+  normalizeNationalPensionQuery,
+  parseNationalPensionXml
+} = require("../src/national-pension");
+const { normalizeFscCorpQuery } = require("../src/fsc-corp");
+const { normalizeG2bSanctionQuery, extractSanctionItems } = require("../src/g2b-sanction");
+
+function npsItemsXml(items) {
+  const body = items
+    .map(
+      (it) =>
+        "<item>" +
+        Object.entries(it)
+          .map(([k, v]) => `<${k}>${v}</${k}>`)
+          .join("") +
+        "</item>"
+    )
+    .join("");
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?><response><header><resultCode>00</resultCode>' +
+    `<resultMsg>NORMAL SERVICE.</resultMsg></header><body><items>${body}</items>` +
+    `<totalCount>${items.length}</totalCount></body></response>`
+  );
+}
+
+test("national-pension normalizer requires a workplace name and derives the 6-digit prefix", () => {
+  assert.throws(() => normalizeNationalPensionQuery({}), /wkplNm/);
+  assert.deepEqual(normalizeNationalPensionQuery({ name: "테스트상사", b_no: "123-45-67890" }), {
+    wkplNm: "테스트상사",
+    bnoPrefix: "123456"
+  });
+  assert.throws(() => normalizeNationalPensionQuery({ name: "테스트상사", b_no: "123" }), /10-digit/);
+});
+
+test("parseNationalPensionXml classifies gateway auth errors and item lists", () => {
+  const auth = parseNationalPensionXml(
+    "<OpenAPI_ServiceResponse><cmmMsgHeader><returnAuthMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</returnAuthMsg><returnReasonCode>30</returnReasonCode></cmmMsgHeader></OpenAPI_ServiceResponse>"
+  );
+  assert.equal(auth.kind, "auth-error");
+  const ok = parseNationalPensionXml(npsItemsXml([{ wkplNm: "갑", seq: "1" }]));
+  assert.equal(ok.kind, "items");
+  assert.equal(ok.items[0].wkplNm, "갑");
+});
+
+test("national-pension route orchestrates basic+detail+monthly and keeps the key server-side", async (t) => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.includes("getBassInfoSearchV2")) {
+      return new Response(
+        npsItemsXml([
+          {
+            wkplNm: "테스트상사",
+            bzowrRgstNo: "123456****",
+            seq: "777",
+            dataCrtYm: "202605",
+            wkplRoadNmDtlAddr: "서울"
+          },
+          {
+            wkplNm: "테스트상사",
+            bzowrRgstNo: "123456****",
+            seq: "777",
+            dataCrtYm: "202604",
+            wkplRoadNmDtlAddr: "서울"
+          }
+        ]),
+        { status: 200, headers: { "content-type": "application/xml" } }
+      );
+    }
+    if (u.includes("getDetailInfoSearchV2")) {
+      return new Response(npsItemsXml([{ jnngpCnt: "120", crrmmNtcAmt: "5000000" }]), {
+        status: 200,
+        headers: { "content-type": "application/xml" }
+      });
+    }
+    if (u.includes("getPdAcctoSttusInfoSearchV2")) {
+      return new Response(npsItemsXml([{ dataCrtYm: "202604" }, { dataCrtYm: "202605" }]), {
+        status: 200,
+        headers: { "content-type": "application/xml" }
+      });
+    }
+    throw new Error(`unexpected NPS URL: ${u}`);
+  };
+
+  const app = buildServer({ env: { DATA_GO_KR_API_KEY: "data-go-key" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const res = await app.inject({
+    method: "GET",
+    url: "/v1/national-pension/workplace?name=" + encodeURIComponent("테스트상사") + "&b_no=1234567890"
+  });
+  const body = res.json();
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.candidate_count, 1, "month-duplicated rows collapse to one workplace");
+  assert.equal(body.raw_row_count, 2);
+  assert.equal(body.selected_candidate.seq, "777");
+  assert.equal(body.detail[0].jnngpCnt, "120");
+  assert.equal(body.monthly_status[0].dataCrtYm, "202604");
+  assert.equal(body.proxy.cache.hit, false);
+  assert.deepEqual(calls.map((u) => new URL(u).pathname.split("/").pop()), [
+    "getBassInfoSearchV2",
+    "getDetailInfoSearchV2",
+    "getPdAcctoSttusInfoSearchV2"
+  ]);
+  assert.ok(calls.every((u) => new URL(u).searchParams.get("serviceKey") === "data-go-key"));
+  assert.equal(JSON.stringify(body).includes("data-go-key"), false, "service key must not leak into the response");
+
+  const cached = await app.inject({
+    method: "GET",
+    url: "/v1/national-pension/workplace?name=" + encodeURIComponent("테스트상사") + "&b_no=1234567890"
+  });
+  assert.equal(cached.json().proxy.cache.hit, true);
+});
+
+test("national-pension route reports missing key and rejects nameless queries", async (t) => {
+  const app = buildServer();
+  t.after(async () => {
+    await app.close();
+  });
+
+  const noKey = await app.inject({ method: "GET", url: "/v1/national-pension/workplace?name=갑" });
+  assert.equal(noKey.statusCode, 503);
+  assert.equal(noKey.json().error, "upstream_not_configured");
+
+  const keyedApp = buildServer({ env: { DATA_GO_KR_API_KEY: "data-go-key" } });
+  t.after(async () => {
+    await keyedApp.close();
+  });
+  const bad = await keyedApp.inject({ method: "GET", url: "/v1/national-pension/workplace" });
+  assert.equal(bad.statusCode, 400);
+  assert.equal(bad.json().error, "bad_request");
+});
+
+test("fsc corp normalizer requires a corporate name", () => {
+  assert.throws(() => normalizeFscCorpQuery({}), /corpNm/);
+  assert.deepEqual(normalizeFscCorpQuery({ name: "테스트", b_no: "123-45-67890" }), {
+    corpNm: "테스트",
+    bno: "1234567890"
+  });
+  assert.throws(() => normalizeFscCorpQuery({ name: "테스트", b_no: "123" }), /10-digit/);
+});
+
+test("fsc corp-outline route returns name-matched candidates and cross-checks bzno when present", async (t) => {
+  const originalFetch = global.fetch;
+  let fetchCalls = 0;
+  global.fetch = async (url) => {
+    fetchCalls += 1;
+    assert.match(String(url), /corpNm=/);
+    assert.match(String(url), /serviceKey=data-go-key/);
+    return new Response(
+      JSON.stringify({
+        response: {
+          header: { resultCode: "00", resultMsg: "NORMAL SERVICE." },
+          body: { items: { item: [{ corpNm: "테스트", crno: "1101111111111", bzno: "1234567890" }] } }
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  const app = buildServer({ env: { DATA_GO_KR_API_KEY: "data-go-key" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const res = await app.inject({
+    method: "GET",
+    url: "/v1/fsc/corp-outline?name=" + encodeURIComponent("테스트") + "&b_no=1234567890"
+  });
+  const body = res.json();
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.candidate_count, 1);
+  assert.equal(body.b_no_cross_check.checked, true);
+  assert.equal(body.b_no_cross_check.matched_candidates.length, 1);
+  const cached = await app.inject({
+    method: "GET",
+    url: "/v1/fsc/corp-outline?name=" + encodeURIComponent("테스트") + "&b_no=1234567890"
+  });
+  assert.equal(cached.json().proxy.cache.hit, true);
+  assert.equal(fetchCalls, 1);
+});
+
+test("fsc corp-outline route maps upstream 403 to a 502 forbidden error", async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response("Forbidden", { status: 403 });
+  const app = buildServer({ env: { DATA_GO_KR_API_KEY: "data-go-key" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+  const res = await app.inject({
+    method: "GET",
+    url: "/v1/fsc/corp-outline?name=" + encodeURIComponent("테스트")
+  });
+  assert.equal(res.statusCode, 502);
+  assert.equal(res.json().error, "upstream_forbidden");
+});
+
+test("g2b sanction normalizer enforces a 10-digit business number", () => {
+  assert.throws(() => normalizeG2bSanctionQuery({ bizno: "123" }), /10-digit/);
+  assert.deepEqual(normalizeG2bSanctionQuery({ b_no: "123-45-67890" }), { bizno: "1234567890" });
+});
+
+test("g2b extractSanctionItems tolerates dict and single-item variants", () => {
+  assert.deepEqual(
+    extractSanctionItems({ response: { header: { resultCode: "00" }, body: { items: "", totalCount: 0 } } }).items,
+    []
+  );
+  const single = extractSanctionItems({
+    response: { header: { resultCode: "00" }, body: { items: { item: { bizNm: "갑" } }, totalCount: 1 } }
+  });
+  assert.equal(single.items.length, 1);
+});
+
+test("g2b sanctioned-supplier route returns active sanctions and uses capital-S ServiceKey", async (t) => {
+  const originalFetch = global.fetch;
+  const seenUrls = [];
+  global.fetch = async (url) => {
+    seenUrls.push(String(url));
+    return new Response(
+      JSON.stringify({
+        response: {
+          header: { resultCode: "00" },
+          body: { items: { item: [{ bizno: "1234567890", bizNm: "갑", rstrtSttDt: "20250101" }] }, totalCount: 1 }
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+  const app = buildServer({ env: { DATA_GO_KR_API_KEY: "data-go-key" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+  const res = await app.inject({ method: "GET", url: "/v1/g2b/sanctioned-supplier?bizno=1234567890" });
+  const body = res.json();
+  assert.equal(res.statusCode, 200);
+  assert.equal(body.total_count, 1);
+  assert.equal(body.active_sanctions[0].bizNm, "갑");
+  assert.match(seenUrls[0], /ServiceKey=data-go-key/);
+  assert.match(seenUrls[0], /inqryDiv=1/);
+
+  const cached = await app.inject({ method: "GET", url: "/v1/g2b/sanctioned-supplier?bizno=1234567890" });
+  assert.equal(cached.json().proxy.cache.hit, true);
+  assert.equal(seenUrls.length, 1);
+
+  const noKey = buildServer();
+  t.after(async () => {
+    await noKey.close();
+  });
+  const missing = await noKey.inject({ method: "GET", url: "/v1/g2b/sanctioned-supplier?bizno=1234567890" });
+  assert.equal(missing.statusCode, 503);
+
+});
+
 test("korean-law search endpoint proxies law.go.kr with the server OC and browser headers", async (t) => {
   const originalFetch = global.fetch;
   let calledUrl = null;

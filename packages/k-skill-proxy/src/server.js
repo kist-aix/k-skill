@@ -42,6 +42,9 @@ const {
 const { fetchNearbyParkingLots } = require("./parking-lots");
 const { searchRegionCode } = require("./region-lookup");
 const { resolveEducationOfficeFromNaturalLanguage } = require("./neis-office-codes");
+const { normalizeNationalPensionQuery, fetchNationalPensionWorkplace } = require("./national-pension");
+const { normalizeFscCorpQuery, fetchFscCorpOutline } = require("./fsc-corp");
+const { normalizeG2bSanctionQuery, fetchG2bSanctions } = require("./g2b-sanction");
 const {
   normalizeKoreanLawDetailQuery,
   normalizeKoreanLawSearchQuery,
@@ -1897,6 +1900,9 @@ function buildServer({ env = process.env, provider = null, now = () => new Date(
         naverNewsApiConfigured: naverSearchKeysPresent,
         ntsBusinessConfigured: Boolean(config.molitApiKey),
         kstartupConfigured: Boolean(config.molitApiKey),
+        nationalPensionConfigured: Boolean(config.molitApiKey),
+        fscCorpConfigured: Boolean(config.molitApiKey),
+        g2bSanctionConfigured: Boolean(config.molitApiKey),
         koreanLawConfigured: Boolean(config.lawOc)
       },
       auth: {
@@ -3371,6 +3377,94 @@ function buildServer({ env = process.env, provider = null, now = () => new Date(
     cacheSuccess: false,
     includeQuery: false,
     responseMapper: redactNtsBusinessValidateResponse,
+    request,
+    reply
+  }));
+
+  // Shared handler for keyed data.go.kr GET lookups that reuse the operator's
+  // DATA_GO_KR_API_KEY server-side (national pension, FSC corp, G2B sanctions).
+  async function handleKeyedDataGoKrLookup({ route, normalizer, fetcher, request, reply }) {
+    let normalized;
+    try {
+      normalized = normalizer(request.query || {});
+    } catch (error) {
+      reply.code(400);
+      return { error: "bad_request", message: error.message };
+    }
+
+    if (!config.molitApiKey) {
+      reply.code(503);
+      return {
+        error: "upstream_not_configured",
+        message: "DATA_GO_KR_API_KEY is not configured on the proxy server.",
+        proxy: { name: config.proxyName, cache: { hit: false, ttl_ms: config.cacheTtlMs } }
+      };
+    }
+
+    const cacheKey = makeCacheKey({ route, ...normalized });
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return {
+        ...cached,
+        proxy: { ...cached.proxy, cache: { hit: true, ttl_ms: config.cacheTtlMs } }
+      };
+    }
+
+    let result;
+    try {
+      result = await fetcher({ ...normalized, serviceKey: config.molitApiKey });
+    } catch (error) {
+      reply.code(502);
+      return {
+        error: "proxy_error",
+        message: error.message,
+        proxy: { name: config.proxyName, cache: { hit: false, ttl_ms: config.cacheTtlMs } }
+      };
+    }
+
+    const keyedErrorStatus = {
+      upstream_forbidden: 502,
+      upstream_timeout: 504,
+      upstream_invalid_response: 502,
+      upstream_error: 502
+    };
+
+    if (result && result.error) {
+      reply.code(keyedErrorStatus[result.error] || 502);
+      return {
+        ...result,
+        proxy: { name: config.proxyName, cache: { hit: false, ttl_ms: config.cacheTtlMs }, requested_at: new Date().toISOString() }
+      };
+    }
+
+    const payload = {
+      ...result,
+      proxy: { name: config.proxyName, cache: { hit: false, ttl_ms: config.cacheTtlMs }, requested_at: new Date().toISOString() }
+    };
+    cache.set(cacheKey, payload, config.cacheTtlMs);
+    return payload;
+  }
+
+  app.get("/v1/national-pension/workplace", async (request, reply) => handleKeyedDataGoKrLookup({
+    route: "national-pension-workplace",
+    normalizer: normalizeNationalPensionQuery,
+    fetcher: fetchNationalPensionWorkplace,
+    request,
+    reply
+  }));
+
+  app.get("/v1/fsc/corp-outline", async (request, reply) => handleKeyedDataGoKrLookup({
+    route: "fsc-corp-outline",
+    normalizer: normalizeFscCorpQuery,
+    fetcher: fetchFscCorpOutline,
+    request,
+    reply
+  }));
+
+  app.get("/v1/g2b/sanctioned-supplier", async (request, reply) => handleKeyedDataGoKrLookup({
+    route: "g2b-sanctioned-supplier",
+    normalizer: normalizeG2bSanctionQuery,
+    fetcher: fetchG2bSanctions,
     request,
     reply
   }));

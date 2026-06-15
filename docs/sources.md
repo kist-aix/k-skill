@@ -220,3 +220,15 @@
 - **기술보증기금**: https://koreatech.or.kr
 - **KOTRA**: https://www.kotra.or.kr
 - **중소벤처기업금융공단**: https://www.sbc.or.kr
+
+### 사업자 실사 (biz-health-check 스킬군)
+- 국세청 사업자등록정보 진위확인 및 상태조회: https://www.data.go.kr/data/15081808/openapi.do
+- 국민연금공단 국민연금 가입 사업장 내역: https://www.data.go.kr/data/3046071/openapi.do
+- 국민연금 endpoint(V2): https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2 (getBassInfoSearchV2 / getDetailInfoSearchV2 / getPdAcctoSttusInfoSearchV2, 요청 파라미터 camelCase)
+- 금융위원회 기업기본정보: https://www.data.go.kr/data/15043184/openapi.do
+- 금융위 기업개요 endpoint: https://apis.data.go.kr/1160100/service/GetCorpBasicInfoService_V2/getCorpOutline_V2
+- 조달청 나라장터 사용자정보 서비스(부정당제재업체정보조회 포함): https://www.data.go.kr/data/15129466/openapi.do
+- 부정당제재 endpoint: https://apis.data.go.kr/1230000/ao/UsrInfoService02/getUnptRsttCorpInfo02 (inqryDiv=1 사업자번호 정확일치, 조회시점 유효 제재만)
+- 국세청 고액·상습체납자 명단공개(무인증): https://www.nts.go.kr/nts/ad/openInfo/selectList.do
+- 지방행정 인허가데이터 LOCALDATA 파일 다운로드(무인증, CP949 CSV): https://file.localdata.go.kr/file/download/<업종slug>/info?orgCode=<지자체코드>
+- LOCALDATA 본체: https://www.localdata.go.kr
