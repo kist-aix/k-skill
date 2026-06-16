@@ -319,12 +319,20 @@ HWP Node API 예시는 전역 `NODE_PATH` 대신 로컬 프로젝트에 `npm ins
 
 ### macOS 바이너리
 
-카카오톡 Mac CLI는 npm 패키지가 아니라 Homebrew tap 설치를 사용한다.
+카카오톡 Mac 아카이브 검색은 npm 패키지가 아니라 `katok` CLI 설치를 사용한다.
 
 ```bash
-brew install silver-flight-group/tap/kakaocli
+brew tap NomaDamas/katok https://github.com/NomaDamas/katok.git
+brew install katok
 brew tap JungHoonGhae/tossinvest-cli
 brew install tossctl
+```
+
+Cargo로 설치할 수도 있다.
+
+```bash
+cargo install katok
+export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
 `toss-securities` 스킬은 공식 토스증권 Open API를 우선 사용한다. 공식 경로를 쓰려면 발급받은 자격증명을 사용자 환경변수로 둔다(공유 프록시로 보내지 않고 토스 서버로 직접 호출한다). `tossctl` 설치는 공식 credentials가 없을 때의 fallback 경로용이다.

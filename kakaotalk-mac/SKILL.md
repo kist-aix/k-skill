@@ -1,223 +1,199 @@
 ---
 name: kakaotalk-mac
-description: Use kakaocli on macOS to read KakaoTalk chats, search messages, send replies after explicit confirmation, and delete sent messages with explicit operator intent.
+description: Search local KakaoTalk archives on Apple Silicon macOS through the katok CLI.
 license: MIT
 metadata:
   category: messaging
   locale: ko-KR
-  phase: v1.5
+  phase: v2
 ---
 
-# KakaoTalk Mac CLI
+# KakaoTalk katok Search
 
 ## What this skill does
 
-`kakaocli` 와 이 저장소 helper를 사용해 macOS에서 카카오톡 대화 목록을 확인하고, 메시지를 검색하고, 필요할 때 답장하거나 보낸 메시지를 삭제한다.
+`katok` CLI를 유일한 실행 표면으로 사용해 macOS 카카오톡 대화를 로컬 아카이브와 검색 인덱스로 동기화하고, keyword/BM25/semantic 검색과 chunk 조회를 수행한다.
 
-이 스킬은 **macOS + 카카오톡 Mac 앱 설치**를 전제로 한다. 공식 Kakao API를 쓰는 것이 아니라 로컬 데이터베이스 읽기와 macOS 접근성 자동화 위에서 동작하므로, 권한과 안전 규칙을 먼저 확인해야 한다.
+이 스킬은 기존 `kakaotalk-mac` 설치 경로를 유지하지만 내부 동작은 `katok` 기반이다. 메시지 전송, 삭제, UI 자동화, 직접 DB 읽기, 인증 캐시 처리, 복호화 material 처리는 이 스킬의 범위가 아니다.
+
+## Privacy Rules
+
+- Do not inspect local database internals from this skill.
+- Do not directly read KakaoTalk DB files.
+- Do not handle auth caches or decryption material.
+- Use `katok sync --source macos --json` for live macOS KakaoTalk ingestion.
+- Search commands should return snippets and chunk ids first.
+- Retrieve full chunk content only when the user explicitly asks to open a result or provides a chunk id.
 
 ## When to use
 
-- "카카오톡 최근 대화 목록 보여줘"
-- "특정 채팅방 최근 메시지 찾아줘"
-- "카카오톡 메시지 검색해줘"
-- "내 카톡으로 테스트 메시지 보내줘"
-- "답장 초안은 만들되 실제 전송 전에는 꼭 확인받아"
+- "카카오톡에서 특정 키워드 검색해줘"
+- "카톡에서 지난 회의/계약/약속 이야기 찾아줘"
+- "이 검색 결과 chunk를 열어줘"
+- "최근 대화가 반영됐는지 확인하고 검색해줘"
 
 ## When not to use
 
 - macOS가 아닌 환경
-- 카카오톡 Mac 앱이 설치되어 있지 않은 환경
-- 사용자 확인 없이 다른 사람에게 메시지를 바로 보내야 하는 작업
-- 카카오 공식 API 범위 안에서 해결 가능한 서버-투-서버 연동 작업
+- Intel Mac에서 로컬 EmbeddingGemma semantic index가 필요한 경우
+- 카카오톡 메시지를 보내거나 삭제해야 하는 경우
+- 카카오톡 DB 파일, 인증 캐시, 복호화 material을 직접 다루라는 요청
+- 서버-투-서버 공식 Kakao API 연동 요청
 
 ## Prerequisites
 
-- macOS
+- Apple Silicon macOS
 - KakaoTalk for Mac 설치
-- Homebrew
-- Mac App Store 로그인(`mas` 사용 시)
-- `kakaocli` 설치
-- `python3` 3.10+
-- 이 저장소의 helper `scripts/kakaotalk_mac.py`
-- 터미널 앱에 **Full Disk Access** 와 **Accessibility** 권한 부여
+- Homebrew 또는 Cargo
+- `katok` CLI 설치
+- 현재 터미널 앱에 Full Disk Access 권한
 
-## Inputs
+## Install katok
 
-- 채팅방 이름 또는 검색 키워드
-- 읽기 범위: 최근 N개, `--since 1h`, `--since 7d` 등
-- 전송할 메시지 본문
-- 삭제할 로컬 메시지 ID 또는 최근 보낸 메시지 삭제 여부
-- 테스트 여부 (`--me`, `--dry-run`)
+Homebrew:
+
+```bash
+brew tap NomaDamas/katok https://github.com/NomaDamas/katok.git
+brew install katok
+```
+
+Cargo:
+
+```bash
+cargo install katok
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+설치 후 CLI가 보이는지 확인한다.
+
+```bash
+katok --help
+katok doctor --json
+```
 
 ## Workflow
 
-### 0. Install KakaoTalk for Mac first when missing
-
-카카오톡 Mac 앱이 없으면 먼저 설치한다. `mas` 를 쓰려면 App Store 로그인 상태여야 한다.
+### 1. Check readiness without prompting for app data
 
 ```bash
-brew install mas
-mas account
-mas install 869223134
+katok doctor --json
 ```
 
-`mas install` 이 막히면 App Store 앱에서 먼저 로그인한 뒤 다시 시도한다.
+`doctor --json`의 `freshness` 섹션에서 마지막 sync/index 상태를 확인한다. 이 기본 doctor는 macOS app-data probe를 실행하지 않으므로 권한 prompt를 띄우지 않는 준비 상태 점검에 적합하다.
 
-### 1. Install `kakaocli`
+### 2. Open macOS permission settings when needed
 
-공식 저장소 기준 권장 설치는 Homebrew tap 이다.
+Full Disk Access 설정이 필요하면 사용자가 직접 허용할 수 있도록 설정 화면을 연다.
 
 ```bash
-brew install silver-flight-group/tap/kakaocli
+katok permissions macos
 ```
 
-설치 후 바로 상태를 확인한다.
+KakaoTalk UI 자동화는 이 스킬 범위가 아니지만, upstream 진단을 위해 Accessibility 설정 화면까지 열어야 하는 경우에만 다음 명령을 쓴다.
 
 ```bash
-kakaocli status
+katok permissions macos --accessibility
 ```
 
-### 2. Grant the required macOS permissions
+### 3. Run explicit macOS setup diagnostics only when needed
 
-**System Settings > Privacy & Security** 에서 현재 사용하는 터미널 앱(iTerm, Terminal, Warp 등)에 아래 권한을 준다.
-
-- **Full Disk Access**: 카카오톡 로컬 데이터베이스 읽기용
-- **Accessibility**: 메시지 전송, harvest, inspect 같은 UI 자동화용
-
-기본 규칙:
-
-- `status` / `auth` / `chats` 같은 읽기 명령도 Full Disk Access 가 필요하다.
-- `send`, `delete`, `delete-last`, `harvest`, `inspect` 류 작업은 Accessibility 권한까지 필요하다.
-
-### 3. Verify read access before attempting side effects
-
-먼저 읽기 경로가 되는지 확인한다.
+카카오톡 앱 설치, container, DB 파일 접근 같은 macOS source adapter 상태를 확인해야 할 때만 probe를 실행한다. 이 명령은 macOS가 app-data 접근 prompt를 띄울 수 있다.
 
 ```bash
-kakaocli status
-kakaocli auth
-kakaocli chats --limit 10 --json
+katok doctor --macos-probe --json
 ```
 
-`auth` 가 성공하면 읽기 경로는 준비된 것이다.
+### 4. Sync local KakaoTalk archives
 
-### 3.5. Use the helper when `kakaocli auth` fails on `user_id` auto-detection
-
-실제 macOS 환경에서는 `KakaoTalk.db` 라는 literal 파일이 없어도, container 안의 **78자 hex 파일**이 실제 SQLCipher DB 인 경우가 있다. 이때 `kakaocli status` 는 정상인데 `kakaocli auth` 만 실패하는 대표 원인은:
-
-- `AlertKakaoIDsList` 후보로는 복호화가 안 됨
-- plist 의 `DESIGNATEDFRIENDSREVISION:<sha512(user_id)>` 만 남아 있음
-- upstream `kakaocli` 의 기본 `user_id` brute-force 시간이 짧아서 auto-detection 이 실패함
-
-이 저장소는 그 구간만 보완하는 **read-only helper** 를 함께 제공한다.
+최신 대화가 중요하거나 `freshness.recommendation.sync_before_search`가 true이면 검색 전에 sync한다.
 
 ```bash
-python3 scripts/kakaotalk_mac.py auth --refresh
-python3 scripts/kakaotalk_mac.py chats --limit 10 --json
-python3 scripts/kakaotalk_mac.py messages --chat "지수" --since 1d --json
-python3 scripts/kakaotalk_mac.py search "회의" --json
+katok sync --source macos --json
 ```
 
-- helper 는 plist 의 `AlertKakaoIDsList` 와 `DESIGNATEDFRIENDSREVISION` hash 를 읽는다.
-- 후보 `user_id` 가 모두 실패하면 SHA-512 preimage search 로 실제 `user_id` 를 더 오래 찾는다.
-- 성공한 `user_id`, DB 경로, derived key 는 `~/.cache/k-skill/kakaotalk-mac-auth.json` 에 캐시한다.
-- 이후 read-only helper 명령(`chats`, `messages`, `search`, `schema`)은 cached `--db` / `--key` 를 붙여 `kakaocli` 를 다시 호출한다.
-
-### 4. Read or search messages
+설정 파일의 기본 source adapter를 쓰는 경우:
 
 ```bash
-kakaocli messages --chat "지수" --since 1h --json
-kakaocli search "점심" --json
+katok sync --json
 ```
 
-helper 경유 예시:
+### 5. Build or refresh the semantic index
+
+semantic search 전 `freshness.recommendation.index_before_semantic_search`가 true이거나 방금 sync한 내용을 semantic 검색에 반영해야 하면 index를 만든다.
 
 ```bash
-python3 scripts/kakaotalk_mac.py messages --chat "지수" --since 1h --json
-python3 scripts/kakaotalk_mac.py search "점심" --json
+katok index --json
 ```
 
-응답은 가능하면 JSON 모드로 받고, 사람이 읽기 쉽게 다시 요약한다.
+`katok index`는 기본적으로 로컬 `embeddinggemma-300m-q4` embedder를 사용한다. Python, Jina, TEI, 별도 HTTP embedding server를 요구하지 않는다.
 
-### 5. Use safe testing before real sends
+### 6. Search with the narrowest useful mode
 
-실제 전송 전에 먼저 자기 자신에게 테스트하거나 dry-run 으로 확인한다.
+정확한 문자열, 이름, 계좌번호, 고유명사는 keyword search를 먼저 쓴다.
 
 ```bash
-kakaocli send --me _ "테스트 메시지"
-kakaocli send --dry-run "채팅방 이름" "보낼 문장"
+katok search keyword "검색어" --json
 ```
 
-`--me` 는 나와의 채팅으로 보내므로 가장 안전한 테스트 경로다.
-
-### 6. Confirm before sending to other people
-
-다른 사람이나 단체방으로 보내기 전에는 반드시 사용자의 최종 확인을 받는다.
-
-확인 전에는 아래만 준비한다.
-
-- 대상 채팅방 이름
-- 전송할 문장
-- 왜 이 문장을 보내는지 한 줄 설명
-
-확인을 받았을 때만 전송한다.
+여러 단어가 섞인 일반 질의는 BM25를 쓴다.
 
 ```bash
-kakaocli send "채팅방 이름" "보낼 문장"
+katok search bm25 "지난주 미팅 자료" --json
 ```
 
-### 7. Delete a sent message only with explicit operator intent
-
-삭제는 카카오톡 Mac UI(우클릭 → 삭제)를 접근성으로 자동화한다. 먼저 `messages --json` 으로 로컬 메시지 ID와 보낸 메시지 여부를 확인하고, 항상 `--dry-run` 으로 대상 채팅방/메시지를 확인한 뒤 실행한다. `--everyone` 은 내가 보낸 메시지에만 허용된다.
+표현이 정확히 기억나지 않는 의미 기반 질의는 semantic search를 쓴다.
 
 ```bash
-python3 scripts/kakaotalk_mac.py messages --chat "채팅방 이름" --limit 20 --json
-python3 scripts/kakaotalk_mac.py delete "채팅방 이름" 123456 --dry-run
-python3 scripts/kakaotalk_mac.py delete "채팅방 이름" 123456 --everyone
-python3 scripts/kakaotalk_mac.py delete-last "채팅방 이름" --dry-run
-python3 scripts/kakaotalk_mac.py delete-last "채팅방 이름" --everyone
+katok search semantic "최근에 논의한 세금 신고 일정" --json
 ```
 
-주의:
+### 7. Retrieve explicit chunks only when needed
 
-- helper의 `chats`, `messages`, `search`, `schema` 는 read-only 경로다. `delete` / `delete-last` 는 UI side effect 이므로 Accessibility 권한과 명시적 실행 의도가 필요하다.
-- 메시지 ID는 로컬 DB의 `messages --json` 출력 기준이며 UI에서 동일한 DB row를 직접 증명할 수 있다는 뜻은 아니다. 실행 계약은 선택된 outbound DB 메시지의 정규화된 텍스트가 현재 활성 채팅방 transcript 영역에서 정확히 하나의 visible targetable message bubble 과 일치할 때만 삭제하는 것이다.
-- 대상 메시지 텍스트가 비어 있거나 첨부/비텍스트 메시지이거나, 정규화 후 같은 텍스트가 여러 개 있거나, 대상 bubble 이 보이지 않거나, 활성 채팅방/삭제 범위/최종 확인 버튼을 확인할 수 없으면 삭제 자동화는 실패한다.
-
-### 8. Use login storage only when the user explicitly wants auto-login
-
-자동 로그인 편의를 원할 때만 자격증명을 저장한다.
+검색 결과는 먼저 snippet과 chunk id 중심으로 요약한다. 사용자가 특정 결과를 열어 달라고 하거나 chunk id를 제공했을 때만 원문 chunk를 조회한다.
 
 ```bash
-kakaocli login
-kakaocli login --status
+katok chunk get <chunk-id> --json
+katok chunk context <chunk-id> --json
+katok chunk parent <chunk-id> --json
 ```
 
-비밀번호를 채팅창에 보내라고 요구하지 않는다. 사용자가 직접 로컬 터미널에서 입력하게 한다.
+- `katok chunk get <chunk-id> --json`: 해당 chunk 원문 조회
+- `katok chunk context <chunk-id> --json`: 같은 채팅방의 직전/직후 micro chunk 조회
+- `katok chunk parent <chunk-id> --json`: semantic search parent window 조회
+
+## Synthetic QA only
+
+실제 카카오톡 설치 없이 upstream fixture로 테스트할 때만 fixture source와 deterministic embedder를 사용한다.
+
+```bash
+katok sync --source fixture tests/fixtures/kakao/replies.jsonl --json
+KATOK_EMBEDDER=local-test katok index --json
+KATOK_EMBEDDER=mock katok index --json
+```
+
+실사용 경로에서는 fixture, mock embedder, 원격 embedding endpoint를 사용하지 않는다.
 
 ## Done when
 
-- 읽기 요청이면 상태 확인 + 대화/메시지 조회 결과가 정리되어 있다
-- 검색 요청이면 키워드 기준 결과가 정리되어 있다
-- 전송 요청이면 테스트(`--me` 또는 `--dry-run`)와 사용자 확인이 끝난 뒤 실제 전송 여부가 명확하다
-- 삭제 요청이면 `messages --json` 으로 대상 ID를 확인하고 `delete` / `delete-last --dry-run` 검증 뒤 실행 결과가 명확하다
+- readiness 요청이면 `katok doctor --json` 결과와 freshness 권장사항을 요약했다.
+- 최신 검색 요청이면 필요한 경우 `katok sync --source macos --json`과 `katok index --json` 실행 여부를 명확히 했다.
+- 검색 요청이면 keyword/BM25/semantic 중 선택한 이유와 JSON 검색 결과 요약을 제공했다.
+- chunk 조회 요청이면 사용자가 지정한 chunk id에 대해서만 `katok chunk get/context/parent` 결과를 요약했다.
 
 ## Failure modes
 
+- `katok` 미설치 또는 Cargo binary PATH 누락
+- Apple Silicon macOS가 아님
 - KakaoTalk for Mac 미설치
-- App Store 로그인 누락으로 `mas install` 실패
 - Full Disk Access 미부여
-- Accessibility 미부여
-- `status` 는 정상인데 `auth` 만 실패하는 `user_id` auto-detection / key mismatch 케이스
-- 채팅방 이름 substring 이 애매해서 잘못된 후보가 여러 개 잡힘
+- `katok doctor --macos-probe --json`에서 container 또는 DB 파일 접근 실패
+- sync 전이라 local archive가 비어 있음
+- semantic index가 오래되었거나 아직 생성되지 않음
+- 검색 결과가 snippet/chunk id만으로 충분하지 않아 명시적 chunk 조회가 필요함
 
 ## Notes
 
-- 이 스킬은 macOS 전용이다.
-- 다른 사람에게 보내는 메시지는 항상 confirm before sending 원칙을 지킨다.
-- 삭제는 되돌리기 어렵고 UI 상태에 민감하므로 먼저 `--dry-run` 으로 대상과 범위를 확인한다.
-- 첫 검증은 `kakaocli status` 와 `kakaocli auth` 부터 시작하는 편이 안전하다.
-- `kakaocli auth` 가 `User ID: auto-detection failed` 로 멈추면 helper 경로를 우선 사용한다.
-- helper cache 는 로컬 SQLCipher key 를 포함하므로 본인 계정에서만 유지하고 공유하지 않는다.
-- 기본 `auth` 텍스트 출력은 key 를 다시 보여주지 않는다. 자동화가 필요할 때만 `--format json` 또는 `--format shell` 을 사용한다.
+- 이 스킬은 read/search/retrieve 전용이다.
+- 메시지 전송과 삭제는 지원하지 않는다.
+- DB 내부 구조, auth cache, decryption material은 직접 다루지 않는다.
+- 기존 설치 이름은 `kakaotalk-mac`이지만 실행 표면은 `katok`이다.

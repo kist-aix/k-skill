@@ -311,8 +311,8 @@ test("repository docs advertise the kakaotalk-mac skill", () => {
   const featureDocPath = path.join(repoRoot, "docs", "features", "kakaotalk-mac.md");
 
   assert.ok(fs.existsSync(featureDocPath), "expected docs/features/kakaotalk-mac.md to exist");
-  assert.match(readme, /\| 카카오톡 Mac CLI \|/);
-  assert.match(readme, /\[카카오톡 Mac CLI\]\(docs\/features\/kakaotalk-mac\.md\)/);
+  assert.match(readme, /\| 카카오톡 Mac 아카이브 검색 \|/);
+  assert.match(readme, /\[카카오톡 Mac 아카이브 검색\]\(docs\/features\/kakaotalk-mac\.md\)/);
   assert.match(install, /--skill kakaotalk-mac/);
 });
 
@@ -634,34 +634,42 @@ test("hosted proxy docs keep self-host overrides inactive and demonstrate resolv
   }
 });
 
-test("kakaotalk-mac skill documents safe macOS kakaocli usage", () => {
+test("kakaotalk-mac skill documents katok archive search usage", () => {
   const skillPath = path.join(repoRoot, "kakaotalk-mac", "SKILL.md");
-  const helperPath = path.join(repoRoot, "scripts", "kakaotalk_mac.py");
-  const featureDoc = read(path.join("docs", "features", "kakaotalk-mac.md"));
+  const featureDocPath = path.join(repoRoot, "docs", "features", "kakaotalk-mac.md");
 
   assert.ok(fs.existsSync(skillPath), "expected kakaotalk-mac/SKILL.md to exist");
-  assert.ok(fs.existsSync(helperPath), "expected scripts/kakaotalk_mac.py to exist");
+  assert.ok(fs.existsSync(featureDocPath), "expected docs/features/kakaotalk-mac.md to exist");
 
   const skill = read(path.join("kakaotalk-mac", "SKILL.md"));
+  const featureDoc = read(path.join("docs", "features", "kakaotalk-mac.md"));
 
   assert.match(skill, /^name: kakaotalk-mac$/m);
-  assert.match(skill, /kakaocli/);
-  assert.match(skill, /macOS/i);
-  assert.match(skill, /KakaoTalk/i);
-  assert.match(skill, /Full Disk Access/i);
-  assert.match(skill, /Accessibility/i);
-  assert.match(skill, /--me/);
-  assert.match(skill, /confirm before sending/i);
 
   for (const doc of [skill, featureDoc]) {
-    assert.match(doc, /python3 scripts\/kakaotalk_mac\.py auth/);
-    assert.match(doc, /python3 scripts\/kakaotalk_mac\.py chats --limit 10 --json/);
-    assert.match(doc, /python3 scripts\/kakaotalk_mac\.py messages --chat/);
-    assert.match(doc, /python3 scripts\/kakaotalk_mac\.py search/);
-    assert.match(doc, /user_id 자동 감지 실패|SHA-512|DESIGNATEDFRIENDSREVISION/i);
-    assert.match(doc, /cache|캐시/);
-    assert.match(doc, /read-only|읽기 전용/i);
-    assert.doesNotMatch(doc, /`query`/);
+    assert.match(doc, /\bkatok\b/);
+    assert.match(doc, /macOS/i);
+    assert.match(doc, /KakaoTalk/i);
+    assert.match(doc, /Full Disk Access/i);
+    assert.match(doc, /katok doctor --json/);
+    assert.match(doc, /katok permissions macos/);
+    assert.match(doc, /katok sync --source macos --json/);
+    assert.match(doc, /katok index --json/);
+    assert.match(doc, /katok search keyword/);
+    assert.match(doc, /katok search bm25/);
+    assert.match(doc, /katok search semantic/);
+    assert.match(doc, /katok chunk get/);
+    assert.match(doc, /katok chunk context/);
+    assert.match(doc, /katok chunk parent/);
+    assert.match(doc, /(no|never|do not|don't|not).{0,80}((direct|raw).{0,40}(DB|database).{0,40}read|directly read.{0,40}(DB|database))/i);
+    assert.match(doc, /(no|never|do not|don't|not).{0,80}(auth|authentication).{0,40}caches?/i);
+    assert.match(doc, /(no|never|do not|don't|not).{0,80}decryption material/i);
+    assert.doesNotMatch(doc, /kakaocli/);
+    assert.doesNotMatch(doc, /python3 scripts\/kakaotalk_mac\.py/);
+    assert.doesNotMatch(doc, /send --me/);
+    assert.doesNotMatch(doc, /delete-last/);
+    assert.doesNotMatch(doc, /confirm before sending/i);
+    assert.doesNotMatch(doc, /SQLCipher key/i);
   }
 });
 
@@ -3992,7 +4000,7 @@ test("k-skill-rhwp package ships CLI bin, WASM-init shim, and minor semver chang
 const README_SKILL_NAME_COLUMN_MAPPING = [
   ["SRT 예매", "srt-booking"],
   ["KTX 예매", "ktx-booking"],
-  ["카카오톡 Mac CLI", "kakaotalk-mac"],
+  ["카카오톡 Mac 아카이브 검색", "kakaotalk-mac"],
   ["서울 지하철 도착정보 조회", "seoul-subway-arrival"],
   ["지하철 분실물 조회", "subway-lost-property"],
   ["긱뉴스 조회", "geeknews-search"],
