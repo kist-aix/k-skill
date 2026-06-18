@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("jobkorea_talent_search.py")
+sys.path.insert(0, str(SCRIPT.parent))
 spec = importlib.util.spec_from_file_location("jobkorea_talent_search", SCRIPT)
 assert spec is not None
 helper = importlib.util.module_from_spec(spec)
