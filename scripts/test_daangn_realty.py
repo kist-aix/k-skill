@@ -7,8 +7,9 @@ from unittest import mock
 
 MODULE_PATH = pathlib.Path(__file__).resolve().parents[1] / "daangn-realty-search" / "scripts" / "daangn_realty.py"
 MODULE_SPEC = importlib.util.spec_from_file_location("daangn_realty", MODULE_PATH)
+if MODULE_SPEC is None or MODULE_SPEC.loader is None:
+    raise RuntimeError(f"Unable to load daangn_realty module from {MODULE_PATH}")
 daangn_realty = importlib.util.module_from_spec(MODULE_SPEC)
-assert MODULE_SPEC.loader is not None
 MODULE_SPEC.loader.exec_module(daangn_realty)
 
 
