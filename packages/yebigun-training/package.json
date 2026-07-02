@@ -30,7 +30,7 @@
     "playwright"
   ],
   "scripts": {
-    "lint": "node --check src/index.js && node --check src/parse.js && node --check src/browser.js && node --check src/history.js && node --check src/cli.js && node --check test/index.test.js && node --check test/history.test.js",
+    "lint": "node --check src/index.js && node --check src/menus.js && node --check src/inquiry.js && node --check src/parse.js && node --check src/open-menu.js && node --check src/browser.js && node --check src/history.js && node --check src/cli.js && node --check test/index.test.js && node --check test/history.test.js",
     "test": "node --test"
   },
   "dependencies": {

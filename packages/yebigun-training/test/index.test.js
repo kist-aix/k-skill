@@ -391,7 +391,7 @@ test("openApplicationMenu throws a relogin error instead of clicking anything wh
   );
 });
 
-test("openApplicationMenu navigates directly (no click) for goto-mode menus like 훈련 연기신청", async () => {
+test("openApplicationMenu navigates directly without reading sensitive HTML for goto-mode menus", async () => {
   const state = { closed: false, gotoUrl: null };
 
   await withMockedBrowserModule(
@@ -401,7 +401,7 @@ test("openApplicationMenu navigates directly (no click) for goto-mode menus like
           state.gotoUrl = url;
         },
         async content() {
-          return genericHtml;
+          throw new Error("sensitive page HTML must not be read");
         },
         url() {
           return `${BASE_URL}${APPLICATION_MENUS.delay.path}`;
@@ -440,6 +440,7 @@ test("openApplicationMenu navigates directly (no click) for goto-mode menus like
       assert.equal(result.menu, "delay");
       assert.equal(result.label, "훈련 연기신청");
       assert.equal(result.title, "연기 신청");
+      assert.equal(result.pageInfo.pageType, "opened");
     },
   );
 });
@@ -596,6 +597,40 @@ test("fetchInquiry throws a relogin error instead of returning a stale list when
         async goto() {},
         async content() {
           return loginHtml;
+        },
+        url() {
+          return `${BASE_URL}/login.do`;
+        },
+        async waitForTimeout() {},
+      };
+
+      const context = {
+        pages() {
+          return [page];
+        },
+      };
+
+      return {
+        chromium: {
+          async connectOverCDP() {
+            return { contexts() { return [context]; }, async close() {} };
+          },
+        },
+      };
+    },
+    async ({ fetchInquiry }) => {
+      await assert.rejects(() => fetchInquiry("applicationResults"), /session is not authenticated or has expired/);
+    },
+  );
+});
+
+test("fetchInquiry treats a login redirect URL as expired even if the markup has no login form", async () => {
+  await withMockedBrowserModule(
+    () => {
+      const page = {
+        async goto() {},
+        async content() {
+          return genericHtml;
         },
         url() {
           return `${BASE_URL}/login.do`;

@@ -1,7 +1,10 @@
 const fs = require("node:fs")
 const path = require("node:path")
 
-const { HOME_URL, BASE_URL, TRAINING_INFO_URL, APPLICATION_MENUS, VIEW_MENUS, inspectYebigunPage, parseTrainingInfo, parseInquiry, parseGenericTable } = require("./parse")
+const { APPLICATION_MENUS, BASE_URL, HOME_URL, TRAINING_INFO_URL, VIEW_MENUS } = require("./menus")
+const { parseGenericTable, parseInquiry } = require("./inquiry")
+const { inspectYebigunPage, parseTrainingInfo } = require("./parse")
+const { contentWithRetry, openApplicationMenuPage } = require("./open-menu")
 
 function resolveChromePath(explicitPath) {
   if (explicitPath) {
@@ -171,103 +174,21 @@ async function fetchInquiry(menu, options = {}) {
       throw new Error(`"${menuDef.label}" list did not finish loading in time. Try \`view\` again, or re-check with \`inspect\` if this keeps happening.`)
     }
 
-    return { url, ...parseInquiry(menu, menuDef.label, html) }
+    return { url, ...parseInquiry(menu, menuDef.label, html, url) }
   } finally {
     await closeBrowserConnection(browser)
   }
 }
 
-/**
- * Navigates to the IvdTraScheDetail.do page and clicks the real on-page
- * button matching `menu` (one of APPLICATION_MENUS' keys) — exactly what a
- * user clicking that button would trigger. Stops as soon as the next screen
- * loads: it never fills in or submits the application form on that screen.
- * The user takes over from there in their own visible Chrome window.
- */
-function findButtonByLabel(buttonLabel) {
-  const candidates = [...document.querySelectorAll("button, a")]
-  const target = candidates.find((el) => (el.textContent || "").trim() === buttonLabel)
-  if (!target) {
-    return false
-  }
-  target.click()
-  return true
-}
-
-/**
- * page.content() can throw "page is navigating and changing the content" if
- * called in the brief window while a click-triggered navigation is still in
- * flight. Retries with a short backoff instead of failing on that transient
- * race (mirrors hipass-receipt's waitForUsageHistoryFrame polling pattern).
- */
-async function contentWithRetry(page, attempts = 10) {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      return await page.content()
-    } catch (error) {
-      if (attempt === attempts - 1 || !/navigating/i.test(error.message || "")) {
-        throw error
-      }
-      await page.waitForTimeout(200)
-    }
-  }
-  throw new Error("Unreachable")
-}
-
-async function openApplicationMenuByClick(page, menuDef) {
-  await page.goto(TRAINING_INFO_URL, { waitUntil: "domcontentloaded" })
-
-  const beforeHtml = await contentWithRetry(page)
-  const beforeInfo = inspectYebigunPage({ url: page.url(), html: beforeHtml })
-  if (beforeInfo.reloginRequired) {
-    throw new Error("yebigun1.mil.kr session is not authenticated or has expired. Ask the user to log in again in the same Chrome profile.")
-  }
-
-  const clicked = await page.evaluate(findButtonByLabel, menuDef.label).catch((error) => {
-    if (/context was destroyed|navigation/i.test(error.message || "")) {
-      return true
-    }
-    throw error
-  })
-
-  if (!clicked) {
-    throw new Error(`Could not find the "${menuDef.label}" button on the training-info page. The page structure may have changed — re-verify with \`inspect\`.`)
-  }
-
-  await page.waitForLoadState("domcontentloaded").catch(() => {})
-  return contentWithRetry(page)
-}
-
-async function openApplicationMenuByGoto(page, menuDef) {
-  await page.goto(resolveTargetUrl(menuDef.path), { waitUntil: "domcontentloaded" })
-  const html = await contentWithRetry(page)
-  const beforeInfo = inspectYebigunPage({ url: page.url(), html })
-  if (beforeInfo.reloginRequired) {
-    throw new Error("yebigun1.mil.kr session is not authenticated or has expired. Ask the user to log in again in the same Chrome profile.")
-  }
-
-  return html
-}
-
-/**
- * Lands on a known application-form screen (one of APPLICATION_MENUS) and
- * stops there. Never fills in or submits the form — the user takes over from
- * here in their own visible Chrome window.
- */
 async function openApplicationMenu(menu, options = {}) {
-  const menuDef = APPLICATION_MENUS[menu]
-  if (!menuDef) {
+  if (!APPLICATION_MENUS[menu]) {
     throw new Error(`Unknown menu "${menu}". Valid options: ${Object.keys(APPLICATION_MENUS).join(", ")}`)
   }
 
   const browser = await connectToChrome(options)
   try {
     const { page } = await getAutomationPage(browser)
-    const html = menuDef.mode === "click" ? await openApplicationMenuByClick(page, menuDef) : await openApplicationMenuByGoto(page, menuDef)
-    const url = page.url()
-    const title = await page.title().catch(() => null)
-
-    return { menu, label: menuDef.label, url, title, pageInfo: inspectYebigunPage({ url, html }) }
+    return await openApplicationMenuPage(page, menu)
   } finally {
     await closeBrowserConnection(browser)
   }

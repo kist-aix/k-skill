@@ -1,67 +1,13 @@
-const BASE_URL = "https://www.yebigun1.mil.kr";
-const HOME_URL = `${BASE_URL}/`;
-const TRAINING_INFO_PATH = "/dmobis/rfh/rgt/edutrasubjpsn/IvdTraScheDetail.do";
-const TRAINING_INFO_URL = `${BASE_URL}${TRAINING_INFO_PATH}`;
-
-const YEBIGUN_ENDPOINTS = {
-  base: BASE_URL,
-  home: HOME_URL,
-  trainingInfo: TRAINING_INFO_PATH,
-};
-
-/**
- * Known application-form menus, confirmed against a real logged-in session
- * on 2026-06-24. Navigation-only in both modes: this skill lands on the next
- * screen and stops there — it never fills in or submits the form that
- * follows. The actual 신청/제출 is always done by the user, in their own
- * visible browser window.
- *
- * - mode "click": the IvdTraScheDetail.do page's goAction() handler wires a
- *   visible button (matched by its label) to the application URL. Used for
- *   menus that only exist as a JS-driven button on that page.
- * - mode "goto": a plain `<a href>` link elsewhere in the site's nav (사이트맵
- *   기준). Used for menus with their own direct, linkable URL — no click
- *   simulation needed, just navigate.
- *
- * 훈련 연기신청 page (ivdTraDelayApplInForm.do) embeds the member's name,
- * 주민등록번호 앞자리, 주소, 휴대폰/집/직장 전화번호 as hidden form fields —
- * far more sensitive than the training-info page. None of that was copied
- * anywhere; only the page's own URL (site structure, not personal data) is
- * recorded here.
- */
-const APPLICATION_MENUS = {
-  selfSelect: { label: "훈련일정 자율선택", mode: "click" },
-  nationalUnit: { label: "전국단위 훈련신청", mode: "click" },
-  holiday: { label: "휴일예비군 훈련신청", mode: "click" },
-  delay: { label: "훈련 연기신청", mode: "goto", path: "/dmobis/rft/rgt/ivdTraDelayApplInForm.do" },
-  hold: { label: "보류 신청", mode: "goto", path: "/dmobis/rfh/rrm/holdpsn/HoldPsnReqForm.do" },
-  holdCancel: { label: "해소 신청", mode: "goto", path: "/dmobis/rfh/rrm/holdpsn/HoldPsnCancelReqForm.do" },
-  // 신청/제출 폼은 아니지만 똑같이 "절대 데이터 추출 없이 화면만 연다" 취급한다 — 둘 다 2026-06-24
-  // 실제 세션 스캔에서 군번/성명/주민등록번호 앞자리/전화번호 등을 직접 노출하는 것을 확인했다.
-  editProfile: { label: "개인정보수정", mode: "goto", path: "/dmobis/rfh/rrm/reserveforce/ReserveForceForm.do" },
-  honors: { label: "예비군 상훈", mode: "goto", path: "/dmobis/rfh/rrm/reserveforce/ReserveForcePrzdcr.do" },
-};
-
-/**
- * Known read-only 조회/목록 menus, confirmed against a real logged-in session
- * on 2026-06-24 — each path was navigated to and its <thead>/<tbody> table
- * structure inspected (column headers only, no row data was read or stored).
- * `view` fetches these and returns the table as generic headers+rows: no
- * page-specific field names, since the value here is "show me my list" not
- * a bespoke schema per page. Low/medium sensitivity only — pages found to
- * embed direct identifiers (군번/성명/주민등록번호/전화번호) are routed to
- * APPLICATION_MENUS (navigation-only) instead, never parsed.
- */
-const VIEW_MENUS = {
-  applicationResults: { label: "훈련신청 결과", path: "/dmobis/rfh/rgt/edutrasubjpsn/NationalUnitResevForcesTraRltList.do" },
-  delayResults: { label: "연기신청 결과", path: "/dmobis/rft/rgt/ivdTraDelayApplRltList.do" },
-  holdResults: { label: "보류·해소 신청결과", path: "/dmobis/rfh/rrm/holdpsn/HoldPsnReqRsltList.do" },
-  holidaySchedule: { label: "휴일예비군 훈련일정 조회", path: "/dmobis/rfh/rgt/edutrasubjpsn/HolidayTrainingScheduleList.do" },
-  unitNotices: { label: "소속부대 공지사항", path: "/dmobis/rfh/mpt/mypubannoun/MyPubAnnounList.do" },
-  trainingNotices: { label: "훈련안내", path: "/dmobis/rfh/mpt/tranotice/TraNoticeList.do" },
-  myQna: { label: "나의 질의응답", path: "/dmobis/rfh/mpt/myquestans/MyQuestAnsList.do" },
-  unitFinder: { label: "예비군부대 찾기", path: "/dmobis/rfh/mpt/mytroopfind/listAdminAddr.do" },
-};
+const {
+  APPLICATION_MENUS,
+  BASE_URL,
+  HOME_URL,
+  TRAINING_INFO_PATH,
+  TRAINING_INFO_URL,
+  VIEW_MENUS,
+  YEBIGUN_ENDPOINTS,
+} = require("./menus");
+const { parseGenericTable, parseInquiry } = require("./inquiry");
 
 const TAG_PATTERN = /<[^>]+>/g;
 const WHITESPACE_PATTERN = /\s+/g;
@@ -167,38 +113,6 @@ function extractSection(html, tableId) {
 function extractAttr(tagHtml, attrName) {
   const match = String(tagHtml || "").match(new RegExp(`${attrName}=["']([^"']*)["']`));
   return match ? match[1] : null;
-}
-
-/**
- * Generic "find the data table" extractor for 조회/목록 pages: takes the
- * first <thead> in the page (column headers) and the <tbody> that follows
- * it (row cells, as plain text — no page-specific field names). Deliberately
- * schema-less: VIEW_MENUS covers several different list pages and giving
- * each one bespoke field names isn't worth it when "headers + row text" is
- * already enough to answer "what's in my list".
- */
-function parseGenericTable(html) {
-  const normalizedHtml = String(html || "")
-  const theadMatch = normalizedHtml.match(/<thead[^>]*>([\s\S]*?)<\/thead>/i)
-  if (!theadMatch) {
-    return { headers: [], rows: [] }
-  }
-
-  const headers = [...theadMatch[1].matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)]
-    .map((match) => stripTags(match[1]))
-    .filter(Boolean)
-
-  const afterThead = normalizedHtml.slice(theadMatch.index + theadMatch[0].length)
-  const tbodyMatch = afterThead.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i)
-  if (!tbodyMatch) {
-    return { headers, rows: [] }
-  }
-
-  const rows = extractRows(tbodyMatch[1])
-    .map(extractCells)
-    .filter((cells) => cells.some((cell) => cell))
-
-  return { headers, rows }
 }
 
 function parseDateRange(rawDateText) {
@@ -358,15 +272,6 @@ function parseTrainingInfo(html) {
  * relogin check. `menu`/`label` are passed through so the caller doesn't need
  * to re-derive which list this came from.
  */
-function parseInquiry(menu, label, html) {
-  const pageInfo = inspectYebigunPage({ html });
-  if (pageInfo.pageType === "login") {
-    throw new Error("yebigun1.mil.kr session is not authenticated or has expired. Ask the user to log in again.");
-  }
-
-  return { menu, label, ...parseGenericTable(html) };
-}
-
 module.exports = {
   APPLICATION_MENUS,
   VIEW_MENUS,
