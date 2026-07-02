@@ -54,6 +54,10 @@
 - korean-law-mcp: https://github.com/chrisryugj/korean-law-mcp
 - korean-privacy-terms upstream: https://github.com/kimlawtech/korean-privacy-terms (Apache-2.0)
 - korean-jangbu-for upstream: https://github.com/kimlawtech/korean-jangbu-for (Apache-2.0; original author @kimlawtech, SpeciAI)
+- Popbill developer center: https://developers.popbill.com
+- Popbill Python SDK: https://pypi.org/project/popbill/
+- Popbill 전자세금계산서 환경설정: https://developers.popbill.com/guide/taxinvoice/getting-started/environment-set-up
+- Popbill 운영 전환 신청: https://developers.popbill.com/customer-center/serviceopen
 - corporate-registration-consulting skill: local://corporate-registration-consulting
 - 대법원 인터넷등기소: https://www.iros.go.kr
 - 온라인법인설립시스템: https://www.startbiz.go.kr
