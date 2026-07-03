@@ -12,6 +12,7 @@ def parse_detail(url, fetch_text):
         "top_floor": None,
         "floor_label": None,
         "nearby_subway": None,
+        "release_date": None,
         "json_ld": [],
     }
     scripts = re.findall(
@@ -51,6 +52,7 @@ def _apply_node(out, node):
         return
     if node.get("@type") == "Product" and not out["title"]:
         out["title"] = node.get("name")
+        out["release_date"] = node.get("releaseDate")
     if node.get("@type") == "Place" and not out["address"]:
         out["address"] = node.get("name")
     for prop in _properties(node.get("additionalProperty")):
