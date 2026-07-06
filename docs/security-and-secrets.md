@@ -32,6 +32,9 @@ KSKILL_KOSIS_API_KEY=replace-me
 KSKILL_KSTARTUP_API_KEY=replace-me
 LAW_OC=replace-me
 KIPRIS_PLUS_API_KEY=replace-me
+NAVER_AD_API_KEY=replace-me
+NAVER_AD_SECRET_KEY=replace-me
+NAVER_AD_CUSTOMER_ID=replace-me
 AIR_KOREA_OPEN_API_KEY=replace-me
 # Kakao Local geocoding은 hosted proxy 사용. self-host proxy 운영 때만 필요.
 KAKAO_REST_API_KEY=replace-me
