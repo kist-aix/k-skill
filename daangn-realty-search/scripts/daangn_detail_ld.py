@@ -50,9 +50,11 @@ def _json_ld_nodes(document):
 def _apply_node(out, node):
     if not isinstance(node, dict):
         return
-    if node.get("@type") == "Product" and not out["title"]:
-        out["title"] = node.get("name")
-        out["release_date"] = node.get("releaseDate")
+    if node.get("@type") == "Product":
+        if not out["title"]:
+            out["title"] = node.get("name")
+        if not out["release_date"]:
+            out["release_date"] = node.get("releaseDate")
     if node.get("@type") == "Place" and not out["address"]:
         out["address"] = node.get("name")
     for prop in _properties(node.get("additionalProperty")):

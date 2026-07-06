@@ -135,6 +135,22 @@ class DetailParsingTest(unittest.TestCase):
 
         self.assertIsNone(detail["release_date"])
 
+    def test_parse_detail_extracts_release_date_from_later_product_node(self):
+        html = """
+        <script type="application/ld+json">
+        {"@graph":[
+          {"@type":"Product","name":"상가 월세"},
+          {"@type":"Product","name":"상가 월세","releaseDate":"2026-07-05T09:12:33.000Z"}
+        ]}
+        </script>
+        """
+
+        with mock.patch.object(daangn_realty, "fetch_text", return_value=html):
+            detail = daangn_realty.parse_detail("https://realty.daangn.com/articles/789")
+
+        self.assertEqual(detail["title"], "상가 월세")
+        self.assertEqual(detail["release_date"], "2026-07-05T09:12:33.000Z")
+
 
 class SearchEnrichmentTest(unittest.TestCase):
     def test_cmd_search_enriches_items_with_release_date(self):
