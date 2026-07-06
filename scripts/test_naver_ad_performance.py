@@ -33,11 +33,30 @@ class SignatureTest(unittest.TestCase):
 
         self.assertEqual(signature, expected)
 
-    def test_build_signature_excludes_query_string_from_message(self):
-        with_query = nap.build_signature("secret", "123", "GET", "/stats")
-        without_query = nap.build_signature("secret", "123", "GET", "/stats")
+    def test_request_signature_excludes_query_string_from_message(self):
+        expected = nap.build_signature("test-secret-key", "123000", "GET", "/stats")
+        response = mock.MagicMock()
+        response.read.return_value = b"[]"
+        urlopen_context = mock.MagicMock()
+        urlopen_context.__enter__.return_value = response
 
-        self.assertEqual(with_query, without_query)
+        with mock.patch.dict("os.environ", ENV, clear=True), \
+                mock.patch.object(nap.time, "time", return_value=123), \
+                mock.patch.object(nap.urllib.request, "urlopen", return_value=urlopen_context) as urlopen:
+            nap.request("GET", "/stats", {"ids": '["cmp-a"]', "fields": '["impCnt"]'})
+
+        request = urlopen.call_args.args[0]
+        query_including_signature = nap.build_signature(
+            "test-secret-key",
+            "123000",
+            "GET",
+            request.full_url.removeprefix(nap.BASE_URL),
+        )
+        signature = request.headers["X-signature"]
+
+        self.assertIn("?", request.full_url)
+        self.assertEqual(signature, expected)
+        self.assertNotEqual(signature, query_including_signature)
 
 
 class CredentialResolutionTest(unittest.TestCase):
