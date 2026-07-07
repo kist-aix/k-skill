@@ -15,6 +15,7 @@ const {
   normalizeKosisDataQuery,
   normalizeKosisMetaQuery,
   normalizeKosisSearchQuery,
+  normalizeKopisListQuery,
   normalizeKstartupQuery,
   normalizeNtsBusinessStatusQuery,
   normalizeNtsBusinessValidateQuery,
@@ -78,6 +79,98 @@ test("createMemoryCache refuses to store failure responses", () => {
 
   assert.equal(cache.set("k4", { items: [{ id: 1 }] }, 60000), true);
   assert.deepEqual(cache.get("k4"), { items: [{ id: 1 }] }, "successful payload must be stored");
+});
+
+test("KOPIS performance list normalizer validates dates and aliases", () => {
+  assert.deepEqual(
+    normalizeKopisListQuery({
+      start: "2026-01-01",
+      end: "2026-01-31",
+      page: "2",
+      limit: "20",
+      genre: "AAAA",
+      areaCode: "11"
+    }, "performances"),
+    {
+      cpage: 2,
+      rows: 20,
+      stdate: "20260101",
+      eddate: "20260131",
+      shcate: "AAAA",
+      signgucode: "11"
+    }
+  );
+  assert.throws(() => normalizeKopisListQuery({ end: "20260131" }, "performances"), /stdate/);
+  assert.throws(() => normalizeKopisListQuery({ start: "20260201", end: "20260131" }, "performances"), /<=/);
+  assert.throws(() => normalizeKopisListQuery({ start: "20260101", end: "20260131", rows: "101" }, "performances"), /rows/);
+});
+
+test("KOPIS routes inject service key and cache list responses", async (t) => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    return new Response("<dbs><db><mt20id>PF1</mt20id><prfnm>햄릿</prfnm></db></dbs>", {
+      status: 200,
+      headers: { "content-type": "application/xml;charset=UTF-8" }
+    });
+  };
+
+  const app = buildServer({ env: { KOPIS_API_KEY: "kopis-key" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const first = await app.inject({ method: "GET", url: "/v1/kopis/performances?start=20260101&end=20260131&limit=5" });
+  assert.equal(first.statusCode, 200);
+  assert.match(first.body, /햄릿/);
+  assert.match(calls[0], /\/openApi\/restful\/pblprfr\?/);
+  assert.match(calls[0], /service=kopis-key/);
+  assert.match(calls[0], /stdate=20260101/);
+  assert.match(calls[0], /eddate=20260131/);
+  assert.match(calls[0], /rows=5/);
+
+  const second = await app.inject({ method: "GET", url: "/v1/kopis/performances?start=20260101&end=20260131&limit=5" });
+  assert.equal(second.statusCode, 200);
+  assert.equal(calls.length, 1);
+});
+
+test("KOPIS detail and facility routes preserve narrow upstream paths", async (t) => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    return new Response("<dbs><db><id>ok</id></db></dbs>", {
+      status: 200,
+      headers: { "content-type": "application/xml;charset=UTF-8" }
+    });
+  };
+
+  const app = buildServer({ env: { KSKILL_KOPIS_API_KEY: "kopis-key" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  assert.equal((await app.inject({ method: "GET", url: "/v1/kopis/facilities?q=%EC%84%B8%EC%A2%85&limit=3" })).statusCode, 200);
+  assert.equal((await app.inject({ method: "GET", url: "/v1/kopis/performances/PF132236" })).statusCode, 200);
+  assert.equal((await app.inject({ method: "GET", url: "/v1/kopis/facilities/FC001247" })).statusCode, 200);
+  assert.match(calls[0], /\/openApi\/restful\/prfplc\?/);
+  assert.match(calls[0], /shprfnmfct=%EC%84%B8%EC%A2%85/);
+  assert.match(calls[1], /\/openApi\/restful\/pblprfr\/PF132236\?service=kopis-key/);
+  assert.match(calls[2], /\/openApi\/restful\/prfplc\/FC001247\?service=kopis-key/);
+});
+
+test("KOPIS routes report missing API key", async (t) => {
+  const app = buildServer({ env: {} });
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({ method: "GET", url: "/v1/kopis/performances?start=20260101&end=20260131" });
+  assert.equal(response.statusCode, 503);
+  assert.equal(response.json().error, "upstream_not_configured");
 });
 
 test("food-safety search does not cache upstream failures so transient errors self-heal", async (t) => {
