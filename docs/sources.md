@@ -17,7 +17,7 @@
 - `kbo-game`: https://github.com/vkehfdl1/kbo-game
 - KBL 일정/결과 API: https://api.kbl.or.kr/match/list
 - KBL 팀 순위 API: https://api.kbl.or.kr/league/rank/team
-- 중앙선거관리위원회 공무국외출장보고서 게시판: https://www.nec.go.kr/site/nec/ex/bbs/List.do?cbIdx=1107 — 인증 불필요, 서버 렌더 HTML 게시글 + 첨부 PDF/HWP/HWPX 등 제공, read-only 직접 조회. 상세는 `/site/nec/ex/bbs/View.do?cbIdx=1107&bcIdx=<게시글ID>`, 첨부는 `/common/board/Download.do?bcIdx=<게시글ID>&cbIdx=1107&streFileNm=<서버파일명>` 패턴을 사용한다. 원본 파일은 레포에 저장하지 않고, 요청 간 지연과 세션 호출 수 제한으로 과도한 요청을 피한다.
+- 중앙선거관리위원회 공무국외출장보고서 게시판: https://www.nec.go.kr/site/nec/ex/bbs/List.do?cbIdx=1107 — 인증 불필요, 서버 렌더 HTML 게시글 + 첨부 PDF/HWP/HWPX 등 제공, read-only 직접 조회. 상세는 `/site/nec/ex/bbs/View.do?cbIdx=1107&bcIdx=<게시글ID>`, 첨부는 `/common/board/Download.do?bcIdx=<게시글ID>&cbIdx=1107&streFileNm=<서버파일명>` 패턴을 사용한다. 2026-07-08 실측에서 목록 62건의 첨부가 모두 PDF였고, `bcIdx=303199` PDF 첨부는 `kordoc` JSON 추출에 성공했다. 원본 파일은 레포에 저장하지 않고, 요청 간 지연과 세션 호출 수 제한으로 과도한 요청을 피한다.
 - tossinvest-cli: https://github.com/JungHoonGhae/tossinvest-cli
 - 토스증권 공식 Open API 문서: https://developers.tossinvest.com/docs
 - 토스증권 공식 Open API OpenAPI JSON (source of truth): https://openapi.tossinvest.com/openapi-docs/latest/openapi.json

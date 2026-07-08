@@ -12,7 +12,7 @@ metadata:
 
 ## What this skill does
 
-중앙선거관리위원회 공식 홈페이지의 공무국외출장보고서 게시판을 read-only로 조회하고, 게시글 제목·등록일·상세 URL·첨부 원문 URL을 확인한다. 첨부가 HWP/HWPX이면 기존 `hwp` 스킬의 `kordoc` 절차로 텍스트 추출을 시도하고, 문서에서 확인되는 범위만 구조화한다.
+중앙선거관리위원회 공식 홈페이지의 공무국외출장보고서 게시판을 read-only로 조회하고, 게시글 제목·등록일·상세 URL·첨부 원문 URL을 확인한다. 첨부가 PDF/HWP/HWPX이면 기존 `hwp` 스킬의 `kordoc` 절차로 텍스트 추출을 시도하고, 문서에서 확인되는 범위만 구조화한다.
 
 이 스킬은 참고용 요약 도구다. 문서에 없는 정보는 추정하지 않고 `문서에서 확인 불가` 또는 `기재되어 있지 않음`으로 표시한다. 중요한 판단은 반드시 공식 원문을 직접 확인해야 한다.
 
@@ -37,7 +37,7 @@ metadata:
 
 실측 기준 게시판은 서버 렌더 HTML이며 로그인 없이 접근 가능하다. 목록 HTML에는 `View.do?cbIdx=1107&bcIdx=...`, `Download.do?...`, `span.date`가 노출된다.
 
-2026-07-08 실측에서는 총 62건, 5페이지가 확인되었고 목록에 노출된 62개 첨부가 모두 PDF였다. PDF는 이번 PR에서 파싱하지 않고 링크 메타데이터만 기록한다. 향후 HWP/HWPX 첨부가 나타나면 아래 HWP/HWPX 절차를 사용한다.
+2026-07-08 실측에서는 총 62건, 5페이지가 확인되었고 목록에 노출된 62개 첨부가 모두 PDF였다. 최신 게시글 `bcIdx=303199`의 PDF 첨부는 `kordoc --format json`으로 파싱 성공(`success: true`, `fileType: "pdf"`, Markdown 48,086자)했으며, 출장기간·출장국가/방문기관·출장목적·출장자·주요일정 표가 추출되었다. 향후 HWP/HWPX 첨부가 나타나면 같은 `kordoc` 절차를 사용한다.
 
 ## Inputs
 
@@ -55,15 +55,15 @@ metadata:
 3. 각 행에서 제목, 등록일, 상세 URL, 첨부 다운로드 URL, 첨부 파일명을 추출한다.
 4. 기간, 키워드, 국가명 조건이 있으면 제목/등록일/파일명과 상세 본문에서 확인 가능한 텍스트만 기준으로 좁힌다.
 5. 상세 페이지를 조회해 제목, 등록일, 본문 설명, 첨부 블록을 재확인한다.
-6. 첨부가 PDF이면 `type: "pdf"`로 기록하고 원문 URL만 포함한다. PDF 파싱은 이번 범위에서 하지 않는다.
-7. 첨부가 HWP/HWPX이면 임시 디렉터리에만 다운로드한다. 레포 안에 저장하지 않는다.
-8. HWP/HWPX는 기존 `hwp` 스킬의 `kordoc` 절차를 사용한다.
+6. 첨부가 PDF/HWP/HWPX이면 임시 디렉터리에만 다운로드한다. 레포 안에 저장하지 않는다.
+7. PDF/HWP/HWPX는 기존 `hwp` 스킬의 `kordoc` 절차를 사용한다. PDF 처리를 위해 `pdfjs-dist`를 함께 지정한다.
 
 ```bash
-npx --yes --package kordoc --package pdfjs-dist kordoc /tmp/report.hwpx --format json
+npx --yes --package kordoc --package pdfjs-dist kordoc /tmp/report.pdf --format json
 ```
 
-9. `kordoc` 결과에서 제목, 국가, 기간, 목적, 요약을 문서 근거가 있는 범위에서만 구조화한다.
+8. `kordoc` 결과에서 제목, 국가, 기간, 목적, 일정, 출장자, 요약을 문서 근거가 있는 범위에서만 구조화한다.
+9. `success: false`, 빈 Markdown, 낮은 페이지 품질, 이미지 기반 스캔 PDF 등으로 추출할 수 없으면 실패 모드를 보고하고 원문 URL과 수동 확인 절차를 안내한다. 사용자가 명시적으로 요청하지 않는 한 OCR 모델 다운로드나 별도 OCR 파이프라인은 실행하지 않는다.
 10. 추출할 수 없거나 문서에 없는 정보는 추정하지 않고 `문서에서 확인 불가` 또는 `기재되어 있지 않음`으로 표시한다.
 11. 작업 후 임시 다운로드 파일을 삭제한다.
 12. 결과에는 항상 공식 게시글 URL과 첨부 원문 URL을 포함한다.
@@ -74,24 +74,22 @@ npx --yes --package kordoc --package pdfjs-dist kordoc /tmp/report.hwpx --format
 {
   "source": "중앙선거관리위원회 공무국외출장보고서 게시판",
   "sourceUrl": "https://www.nec.go.kr/site/nec/ex/bbs/List.do?cbIdx=1107",
-  "title": "",
-  "publishedAt": "",
+  "title": "선거기관의 역할 및 대응사례 연구 등 국외출장보고서(오스트리아, 크로아티아)",
+  "publishedAt": "2026-03-13",
   "institution": "중앙선거관리위원회",
-  "country": "",
-  "period": "",
-  "purpose": "",
-  "summary": "",
+  "country": "오스트리아, 크로아티아",
+  "period": "2025. 11. 22.(토) ~ 11. 30.(일) [7박 9일]",
+  "purpose": "유럽 각국 선거관리위원회의 역할, 권한, 위법행위 규제 및 대응사례를 비교 연구하고 정책 개선 참고자료로 활용하기 위한 출장",
+  "summary": "오스트리아와 크로아티아의 선거관리기관 및 시민단체 방문·면담 내용을 바탕으로 선거 공정성 확보, 정치자금 투명성, 허위정보 대응 관련 시사점을 정리한 보고서입니다.",
   "attachments": [
     {
-      "title": "",
-      "url": "",
-      "type": "hwp|hwpx|pdf|unknown"
+      "title": "선거기관의역할및대응사례_연구_등_국외출장보고서(오스트리아_크로아티아).pdf",
+      "url": "https://www.nec.go.kr/common/board/Download.do?bcIdx=303199&cbIdx=1107&streFileNm=a148c7c6-e1e8-4e8b-85ab-f3d27ec74b1d.pdf",
+      "type": "pdf"
     }
   ],
   "unstatedFields": [
-    "상세 일정: 문서에서 확인 불가",
-    "예산 또는 비용: 문서에서 확인 불가",
-    "동행자 정보: 문서에서 확인 불가"
+    "예산 또는 비용: 문서에서 확인 불가"
   ],
   "notes": [
     "이 결과는 공식 공개 문서를 기준으로 한 참고용 요약입니다.",
@@ -149,7 +147,7 @@ npx --yes --package kordoc --package pdfjs-dist kordoc /tmp/report.hwpx --format
 - 계획서와 결과보고서 비교
 - 평일 관광 일정 자동 판정
 - BTIS, data.go.kr, 타 부처 확장
-- PDF 파싱
+- OCR 기반 스캔 PDF 복원 자동 실행
 - 원본 PDF/HWP/HWPX 레포 저장
 
 ## Failure modes
@@ -158,9 +156,10 @@ npx --yes --package kordoc --package pdfjs-dist kordoc /tmp/report.hwpx --format
 - `empty response`: 목록/상세 페이지가 비어 있음
 - `blocked or login page`: 차단, 점검, 로그인/대기 페이지로 보임
 - `unexpected HTML`: 제목, 날짜, 상세 URL, 첨부 URL 선택자가 바뀜
-- `attachment type unsupported`: PDF만 있어 링크 메타데이터만 반환
+- `attachment type unsupported`: PDF/HWP/HWPX가 아닌 첨부라 원문 URL과 수동 확인 절차만 반환
 - `kordoc unavailable`: 로컬에서 `kordoc` 실행 불가. 새 파서를 만들지 말고 원문 URL과 수동 확인 절차를 안내
-- `parse failed`: HWP/HWPX가 손상, 암호화, 스캔 이미지, 또는 kordoc 미지원 구조
+- `parse failed`: PDF/HWP/HWPX가 손상, 암호화, 스캔 이미지, 또는 kordoc 미지원 구조
+- `scanned or low text quality`: PDF가 이미지 기반이거나 `kordoc` 품질 경고가 높아 자동 추출 신뢰도가 낮음
 
 ## Done when
 
@@ -168,6 +167,5 @@ npx --yes --package kordoc --package pdfjs-dist kordoc /tmp/report.hwpx --format
 - 목록에서 제목, 등록일, 상세 URL, 첨부 원문 URL을 확인했다.
 - 상세 페이지를 최소 1건 확인했다.
 - 첨부 타입을 `hwp|hwpx|pdf|unknown` 중 하나로 표시했다.
-- HWP/HWPX이면 `hwp` 스킬의 `kordoc` 절차를 시도하거나 실패 모드를 보고했다.
-- PDF이면 파싱하지 않고 링크 메타데이터만 기록했다.
+- PDF/HWP/HWPX이면 `hwp` 스킬의 `kordoc` 절차를 시도하고 문서 근거가 있는 범위만 구조화하거나 실패 모드를 보고했다.
 - 공식 출처 URL, 첨부 원문 URL, 참고용/원문 확인 안내를 포함했다.
