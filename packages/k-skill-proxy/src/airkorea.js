@@ -206,10 +206,18 @@ async function fetchJson(baseUrl, params, { fetchImpl = global.fetch, headers = 
   }
 
   url.search = searchParams.toString();
-  const response = await fetchImpl(url, {
-    headers,
-    signal: AbortSignal.timeout(20000)
-  });
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      headers,
+      signal: AbortSignal.timeout(20000)
+    });
+  } catch {
+    const error = new Error("AirKorea upstream request failed.");
+    error.statusCode = 502;
+    error.code = "upstream_fetch_failed";
+    throw error;
+  }
 
   if (!response.ok) {
     if (response.status === 403) {

@@ -2579,6 +2579,34 @@ test("proxyAirKoreaRequest redacts a service key echoed by upstream", async () =
   assert.match(result.body, /\[REDACTED\]/);
 });
 
+test("AirKorea fetch rejections do not expose credential-bearing URLs", async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    throw new Error(`boom ${url}`);
+  };
+
+  const app = buildServer({
+    env: {
+      AIR_KOREA_OPEN_API_KEY: "airkorea-secret+/="
+    }
+  });
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  for (const url of [
+    "/B552584/ArpltnInforInqireSvc/getMsrstnAcctoRltmMesureDnsty?returnType=json&stationName=%EA%B0%95%EB%82%A8%EA%B5%AC",
+    "/v1/fine-dust/report?stationName=%EA%B0%95%EB%82%A8%EA%B5%AC"
+  ]) {
+    const response = await app.inject({ method: "GET", url });
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.json().error, "upstream_fetch_failed");
+    assert.doesNotMatch(response.body, /airkorea-secret|serviceKey=/);
+  }
+});
+
 test("public AirKorea passthrough route forwards allowed upstream responses", async (t) => {
   const originalFetch = global.fetch;
   global.fetch = async () =>
