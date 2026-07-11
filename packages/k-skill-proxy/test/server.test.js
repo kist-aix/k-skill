@@ -383,6 +383,31 @@ test("KR WHOIS IP and AS routes redact echoed keys and do not cache semantic fai
   assert.equal(calls, 2, "WHOIS semantic failures must not be cached");
 });
 
+test("KR WHOIS routes do not expose the server key when fetch throws", async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    throw new Error(`request failed for ${url}`);
+  };
+
+  const app = buildServer({ env: { DATA_GO_KR_API_KEY: "super-secret-data-go-key" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  for (const url of [
+    "/v1/kr-whois/domain?domain=kisa.or.kr",
+    "/v1/kr-whois/ip?ip=202.30.50.51",
+    "/v1/kr-whois/as?asn=AS9700"
+  ]) {
+    const response = await app.inject({ method: "GET", url });
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.json().error, "upstream_fetch_failed");
+    assert.doesNotMatch(response.body, /super-secret-data-go-key/);
+    assert.doesNotMatch(response.body, /serviceKey=/i);
+  }
+});
+
 test("NHIS long-term care normalizer validates bounded search params", () => {
   assert.deepEqual(
     normalizeNhisLongTermCareQuery({

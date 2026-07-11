@@ -102,9 +102,21 @@ async function proxyKrWhoisRequest({ url: upstreamUrl, params, serviceKey, fetch
   url.searchParams.set("query", params.query);
   url.searchParams.set("answer", params.answer);
 
-  const response = await fetchImpl(url.toString(), {
-    signal: AbortSignal.timeout(20000)
-  });
+  let response;
+  try {
+    response = await fetchImpl(url.toString(), {
+      signal: AbortSignal.timeout(20000)
+    });
+  } catch {
+    return {
+      statusCode: 502,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "upstream_fetch_failed",
+        message: "WHOIS upstream request failed."
+      })
+    };
+  }
   const body = redactSecretValue(await response.text(), serviceKey);
   if (isKrWhoisGatewayError(body)) {
     return {
