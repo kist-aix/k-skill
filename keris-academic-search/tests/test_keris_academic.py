@@ -78,6 +78,23 @@ class KerisAcademicHelperTests(unittest.TestCase):
         self.assertIn("RISS_API_KEY", stderr.getvalue())
         self.assertNotIn("DATA_GO_KR_API_KEY", stderr.getvalue())
 
+    def test_timeout_is_reported_without_traceback_for_proxy_and_direct(self):
+        stderr = io.StringIO()
+        with mock.patch.object(keris_academic.urllib.request, "urlopen", side_effect=TimeoutError("timed out")), contextlib.redirect_stderr(stderr):
+            code = keris_academic.run(["search", "--keyword", "교육"])
+        self.assertEqual(code, 1)
+        self.assertIn("시간이 초과", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, {"KSKILL_RISS_API_KEY": "key"}, clear=True), mock.patch.object(
+            keris_academic.urllib.request, "urlopen", side_effect=TimeoutError("timed out")
+        ), contextlib.redirect_stderr(stderr):
+            code = keris_academic.run(["search", "--keyword", "교육", "--resource-type", "T", "--direct"])
+        self.assertEqual(code, 1)
+        self.assertIn("시간이 초과", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_dry_run_redacts_direct_key_for_all_resource_types(self):
         stdout = io.StringIO()
         with mock.patch.dict(os.environ, {"KSKILL_RISS_API_KEY": "super-secret"}, clear=True), contextlib.redirect_stdout(stdout):

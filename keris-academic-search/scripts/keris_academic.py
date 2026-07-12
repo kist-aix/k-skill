@@ -104,6 +104,9 @@ def http_get_json(url: str, timeout: int, via_proxy: bool = True) -> Dict[str, A
         raise HelperError(str(payload.get("message") or f"API HTTP 오류: {error.code} {error.reason}")) from error
     except urllib.error.URLError as error:
         raise HelperError(f"{PROXY_DOWN_MSG} (상세: {error.reason})" if via_proxy else f"RISS API 네트워크 오류: {error.reason}") from error
+    except TimeoutError as error:
+        target = "프록시 서버" if via_proxy else "RISS API"
+        raise HelperError(f"{target} 요청 시간이 초과되었습니다.") from error
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as error:
@@ -160,6 +163,8 @@ def http_get_direct_xml(urls: List[str], timeout: int, page: int, page_size: int
                 results.append(parse_riss_xml(response.read()))
         except (urllib.error.HTTPError, urllib.error.URLError) as error:
             raise HelperError(f"RISS API 요청 실패: {error}") from error
+        except TimeoutError as error:
+            raise HelperError("RISS API 요청 시간이 초과되었습니다.") from error
     queues = [list(result["items"]) for result in results]
     items = []
     while len(items) < page_size and any(queues):
