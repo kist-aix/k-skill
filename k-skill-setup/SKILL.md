@@ -71,6 +71,7 @@ KSKILL_FORESTTRIP_ID=replace-me
 KSKILL_FORESTTRIP_PASSWORD=replace-me
 KSKILL_EV_CHARGER_API_KEY=replace-me
 KSKILL_BUILDING_REGISTER_API_KEY=replace-me
+KSKILL_RISS_API_KEY=replace-me
 LAW_OC=replace-me
 KIPRIS_PLUS_API_KEY=replace-me
 AIR_KOREA_OPEN_API_KEY=replace-me
@@ -109,6 +110,8 @@ chmod 0600 ~/.config/k-skill/secrets.env
 
 건축물대장 표제부 조회는 `k-skill-proxy`의 `/v1/building-register/title`을 호출하므로 일반 사용자는 키가 필요 없다. 주소 입력은 같은 proxy의 Kakao geocode를 먼저 사용한다. `--direct`에서만 `KSKILL_BUILDING_REGISTER_API_KEY` 또는 `DATA_GO_KR_API_KEY`를 사용하고 데이터셋 `15134735` 활용신청을 별도로 해야 한다(자동승인).
 
+KERIS/RISS 학술자료 검색은 `k-skill-proxy`의 `/v1/keris-academic/search`를 호출하므로 일반 사용자는 키가 필요 없다. `--direct` 또는 self-host 운영자만 `KSKILL_RISS_API_KEY`를 설정하며 호환 변수 `RISS_API_KEY`도 허용한다. RISS 검색에는 `DATA_GO_KR_API_KEY`를 사용하지 않는다.
+
 
 한국 특허 정보 검색은 KIPRIS Plus Open API 경로를 쓸 때 `KIPRIS_PLUS_API_KEY` 를 채운다. helper는 이 값을 읽어 실제 요청에서 `ServiceKey` 쿼리 파라미터로 보낸다. 공공데이터포털에서 복사한 percent-encoded key도 그대로 넣어도 된다.
 
@@ -133,6 +136,7 @@ chmod 0600 ~/.config/k-skill/secrets.env
 - 창업진흥원 K-Startup 조회: 사용자 시크릿 불필요 (`DATA_GO_KR_API_KEY`는 proxy 서버만; `--direct` 호출 때만 `KSKILL_KSTARTUP_API_KEY`)
 - 전기차 충전소 위치·상태 조회: 사용자 시크릿 불필요 (hosted proxy 사용; `--direct` 때만 `KSKILL_EV_CHARGER_API_KEY` 또는 `DATA_GO_KR_API_KEY`)
 - 건축물대장 표제부 조회: 사용자 시크릿 불필요 (hosted proxy 사용; `--direct` 때만 `KSKILL_BUILDING_REGISTER_API_KEY` 또는 `DATA_GO_KR_API_KEY`)
+- KERIS/RISS 학술자료 검색: 사용자 시크릿 불필요 (hosted proxy 사용; `--direct`/self-host 때만 `KSKILL_RISS_API_KEY`, 호환 `RISS_API_KEY`)
 - 근처 가장 싼 주유소 찾기: 사용자 시크릿 불필요 (기본 hosted proxy 사용)
 - 서울 지하철: 사용자 시크릿 불필요 (기본 hosted proxy 사용, 운영자만 `SEOUL_OPEN_API_KEY`)
 - 서울 실시간 혼잡도: 사용자 시크릿 불필요 (기본 hosted proxy 사용, 운영자만 `SEOUL_OPEN_API_KEY`)

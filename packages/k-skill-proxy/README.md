@@ -18,6 +18,7 @@
 - `GET /v1/ev-charger/info` — 환경부 전기차 충전소 정보(`DATA_GO_KR_API_KEY`, 데이터셋 `15076352`)
 - `GET /v1/ev-charger/status` — 환경부 전기차 충전기 상태(`DATA_GO_KR_API_KEY`, 데이터셋 `15076352`)
 - `GET /v1/building-register/title` — 국토교통부 건축물대장 표제부(`DATA_GO_KR_API_KEY`, 데이터셋 `15134735`, XML upstream)
+- `GET /v1/keris-academic/search` — KERIS RISS 학술 메타데이터 검색(`KSKILL_RISS_API_KEY`, compatibility `RISS_API_KEY`, XML upstream)
 - `GET /v1/neis/school-search` — 나이스 학교기본정보(교육청명·학교명 검색)
 - `GET /v1/neis/school-meal` — 나이스 급식식단정보(일자별 메뉴)
 - `POST /v1/nts-business/status` — 국세청 사업자등록 상태조회(`DATA_GO_KR_API_KEY`)
@@ -80,6 +81,7 @@
 - `KAKAO_REST_API_KEY` — 프록시 서버 쪽 Kakao REST API 키 (`kakao-local/geocode`, `kakao-map/*`, `kakao-mobility/directions`)
 - `KRX_API_KEY` — 프록시 서버 쪽 KRX Open API upstream key
 - `KOSIS_API_KEY` 또는 `KSKILL_KOSIS_API_KEY` — 프록시 서버 쪽 KOSIS Open API upstream key (`kosis/search`, `kosis/meta`, `kosis/data`, `kosis/list`, `kosis/explain`, `kosis/indicator`)
+- `KSKILL_RISS_API_KEY` 또는 `RISS_API_KEY` — 프록시 서버 쪽 RISS 검색 Open API key (`keris-academic/search`). `DATA_GO_KR_API_KEY`를 사용하지 않는다.
 - `NAVER_SEARCH_CLIENT_ID`, `NAVER_SEARCH_CLIENT_SECRET` — 네이버 검색 Open API 키(`shop.json`, `news.json` 공통). 네이버 뉴스 route(`naver-news/search`)는 이 키가 **필수**이며 없으면 `503 upstream_not_configured` 를 돌려준다. 네이버 쇼핑 route(`naver-shopping/search`)는 **선택**이며 설정되면 공식 API 를 우선 사용하고, 없으면 공개 BFF JSON 파서로 fallback 한다. 공식 쇼핑 API 는 `review` 정렬을 지원하지 않아 `meta.sort_applied: "unsupported"`로 표시한다. no-key 쇼핑 fallback 은 `page`를 BFF에 전달해 해당 페이지를 고르고, `price_asc`/`price_dsc`/`review`는 선택 페이지 안에서 로컬 정렬하며, `date`는 `meta.sort_applied: "unsupported"`로 표시
 - `KSKILL_PROXY_HOST` — 기본 `127.0.0.1`
 - `KSKILL_PROXY_PORT` — local development listen port. Set it explicitly in your shell.
@@ -204,6 +206,14 @@ curl -fsS --get "${LOCAL_PROXY_BASE_URL}/v1/building-register/title" \
 ```
 
 PNU의 11번째 자리 `1`(일반 토지)은 건축물대장 API `platGbCd=0`, `2`(산)는 `platGbCd=1`로 변환된다.
+
+RISS 학술자료 검색 예시 (`KSKILL_RISS_API_KEY` 필요):
+
+```bash
+curl -fsS --get "${LOCAL_PROXY_BASE_URL}/v1/keris-academic/search" \
+  --data-urlencode 'keyword=인공지능 교육' \
+  --data-urlencode 'resourceType=A'
+```
 
 의약품 안전 체크 예시 (`DATA_GO_KR_API_KEY` 필요):
 

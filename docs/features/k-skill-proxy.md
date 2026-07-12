@@ -27,6 +27,7 @@ client/skill -> k-skill-proxy -> upstream public API
 - `GET /v1/ev-charger/info` (전기차 충전소 정보, `DATA_GO_KR_API_KEY`, 데이터셋 `15076352` 별도 활용신청)
 - `GET /v1/ev-charger/status` (전기차 충전기 상태, `DATA_GO_KR_API_KEY`, 데이터셋 `15076352` 별도 활용신청)
 - `GET /v1/building-register/title` (건축물대장 표제부, `DATA_GO_KR_API_KEY`, 데이터셋 `15134735` 별도 활용신청)
+- `GET /v1/keris-academic/search` (KERIS RISS 학술 메타데이터 검색, `KSKILL_RISS_API_KEY`, compatibility `RISS_API_KEY`, XML upstream)
 - `GET /v1/mfds/drug-safety/lookup` (식약처 의약품개요정보 + 안전상비의약품 정보, `DATA_GO_KR_API_KEY`)
 - `GET /v1/mfds/food-safety/search` (식약처 부적합 식품 + 식품안전나라 회수 정보, `DATA_GO_KR_API_KEY`, 선택적 `FOODSAFETYKOREA_API_KEY`)
 - `GET /v1/korean-stock/search`
@@ -66,6 +67,7 @@ client/skill -> k-skill-proxy -> upstream public API
 - `HRFCO_OPEN_API_KEY=...`
 - `OPINET_API_KEY=...`
 - `DATA_GO_KR_API_KEY=...` (WHOIS `15094277`, EV 충전소 `15076352`, 건축물대장 `15134735` 등 route별 공공데이터포털 활용신청 승인 필요)
+- `KSKILL_RISS_API_KEY=...` (RISS API 센터 검색 API key; compatibility `RISS_API_KEY`, `DATA_GO_KR_API_KEY`와 별개)
 - `FOODSAFETYKOREA_API_KEY=...` (선택: 식품안전나라 회수 live 결과, 없으면 sample fallback)
 - `KEDU_INFO_KEY=...` (나이스 교육정보 개방 포털 Open API 인증키)
 - `DATA4LIBRARY_AUTH_KEY=...` (도서관 정보나루 Open API 인증키)
@@ -209,6 +211,16 @@ curl -fsS --get 'https://k-skill-proxy.nomadamas.org/v1/building-register/title'
 PNU의 11번째 자리는 토지구분으로 `1`은 일반 토지, `2`는 산이다. proxy는 이를 건축물대장 API의 `platGbCd=0`, `platGbCd=1`로 각각 변환한다.
 
 데이터셋 `15134735` 활용신청은 별도로 필요하며 자동승인 후에도 활성화 전에는 `502 upstream_forbidden`이 반환될 수 있다. `/health`의 `buildingRegisterConfigured`는 서버 키 설정 여부만 나타낸다.
+
+KERIS/RISS 학술자료 검색:
+
+```bash
+curl -fsS --get 'https://k-skill-proxy.nomadamas.org/v1/keris-academic/search' \
+  --data-urlencode 'keyword=인공지능 교육' \
+  --data-urlencode 'resourceType=A' \
+  --data-urlencode 'page=1' \
+  --data-urlencode 'pageSize=10'
+```
 
 의약품 안전 체크 endpoint:
 
