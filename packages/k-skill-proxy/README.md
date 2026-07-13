@@ -42,6 +42,8 @@
 - `GET /v1/kstartup/statistics` — 창업진흥원 K-Startup 통계보고서 정보(`DATA_GO_KR_API_KEY`)
 - `GET /v1/naver-shopping/search` — 네이버 검색 Open API 쇼핑 검색 우선, 키가 없으면 네이버 쇼핑 공개 BFF JSON 기반 상품/가격 후보 조회
 - `GET /v1/naver-news/search` — 네이버 검색 Open API 뉴스 검색(`news.json`) 기반 최신 뉴스 기사 제목/요약/링크/발행시각 조회(`NAVER_SEARCH_CLIENT_ID`, `NAVER_SEARCH_CLIENT_SECRET` 필요)
+- `GET /v1/vworld/search` — VWorld 단지명·지번 검색(호출자가 `x-k-skill-vworld-api-key` 헤더로 자기 키를 위임)
+- `GET /v1/vworld/apartment-prices` — VWorld 공동주택가격 속성 조회(면적별 범위·동호 조회용, 호출자가 `x-k-skill-vworld-api-key` 헤더로 자기 키를 위임)
 - `GET /v1/data4library/library-search` — 도서관 정보나루 정보공개 도서관 조회(`DATA4LIBRARY_AUTH_KEY`)
 - `GET /v1/data4library/book-search` — 도서관 정보나루 도서 검색(`DATA4LIBRARY_AUTH_KEY`)
 - `GET /v1/data4library/book-detail` — 도서관 정보나루 도서 상세 조회(`DATA4LIBRARY_AUTH_KEY`)
@@ -62,6 +64,7 @@
 - `naverShoppingConfigured` — 네이버 쇼핑 라우트는 공개 BFF JSON fallback 이 있어서 **항상 `true`** 다. 키가 없어도 public BFF 경로로 응답이 나간다.
 - `naverSearchApiConfigured` — 네이버 검색 Open API 키(`NAVER_SEARCH_CLIENT_ID` + `NAVER_SEARCH_CLIENT_SECRET`) 설정 여부. 네이버 쇼핑 라우트는 이 값이 `true` 면 공식 API 를 선호하고, `false` 면 BFF fallback 으로 자동 전환한다. 즉 이 플래그는 **쇼핑 쪽에서는 advisory** 다.
 - `naverNewsApiConfigured` — 네이버 뉴스 라우트의 **운영 가능 여부**. 뉴스에는 fallback 이 없어서 키가 없으면 뉴스 라우트는 `503 upstream_not_configured` 를 돌려준다.
+- `vworldRelayAvailable` — VWorld 읽기 전용 relay 라우트가 등록되었음을 뜻한다. 키는 서버에 저장하지 않고 매 요청의 `x-k-skill-vworld-api-key` 헤더로 받으므로 credential 설정 여부를 뜻하지 않는다.
 
 `naverSearchApiConfigured` 와 `naverNewsApiConfigured` 는 같은 환경변수에 의존하므로 현재 boolean 값은 항상 일치하지만, **의미(semantic contract)는 다르다**: 전자는 "공식 키가 있는지" 를, 후자는 "뉴스 라우트가 실제로 응답을 돌려줄 수 있는지" 를 보고한다. 향후 검색 키가 분리되거나 fallback 정책이 바뀌어도 이 두 플래그는 분리된 채 유지된다.
 
@@ -88,6 +91,8 @@
 - `DATA_GO_KR_API_KEY` - 공공데이터포털 에서 쓰이는 API 인증키 (`household-waste`, `parking-lots`, `real-estate`, `nts-business`, `mfds-drug-safety`, `mfds-food-safety`, `lh-notice`, `nhis/*`, `kr-whois/*`). 각 서비스는 공공데이터포털에서 별도 "활용신청" 승인이 필요하다. 키를 발급받은 뒤에는 [LH 임대공고문 정보](https://www.data.go.kr/data/15058530/openapi.do), [국민건강보험공단 장기요양기관 검색 서비스](https://www.data.go.kr/data/15059029/openapi.do), [국민건강보험공단 검진기관 찾기 조회](https://www.data.go.kr/data/15154419/openapi.do), WHOIS 도메인/IP 정보 API(서비스 `15094277`) 페이지에서도 활용신청을 눌러 동일 키를 활성화해야 해당 라우트가 성공한다. 미활성 상태에서는 upstream이 HTTP 403 Forbidden 또는 data.go.kr gateway 오류를 돌려주고 proxy는 upstream error로 변환한다.
 
 기본 정책은 **무료 API 공개 프록시 = 무인증** 이다. 대신 endpoint scope 를 좁게 유지하고, cache + rate limit 으로 남용을 늦춘다.
+
+VWorld 라우트는 Cloudflare Worker와 VWorld 사이의 네트워크 호환 문제를 우회하기 위한 credential-delegation 예외다. 프록시는 VWorld 키를 저장하지 않으며, HTTPS 헤더로 받은 키를 고정된 `api.vworld.kr`의 두 allowlist 경로에만 전달한다. 쿼리스트링의 `key`는 거부하고, 키는 cache key·응답·오류 로그에 포함하지 않는다.
 
 ## 로컬 실행
 
@@ -140,6 +145,26 @@ curl -fsS --get "${LOCAL_PROXY_BASE_URL}/v1/korea-weather/forecast" \
 ```bash
 curl -fsS --get "${LOCAL_PROXY_BASE_URL}/v1/han-river/water-level" \
   --data-urlencode 'stationName=한강대교'
+```
+
+VWorld 공동주택 검색·공시가격 조회 예시 (`VWORLD_API_KEY`는 호출자 환경에만 존재):
+
+```bash
+curl -fsS --get "${LOCAL_PROXY_BASE_URL}/v1/vworld/search" \
+  -H "x-k-skill-vworld-api-key: ${VWORLD_API_KEY}" \
+  --data-urlencode 'query=강나루현대' \
+  --data-urlencode 'type=place' \
+  --data-urlencode 'domain=apartment-price-mcp.warmjin.com'
+
+curl -fsS --get "${LOCAL_PROXY_BASE_URL}/v1/vworld/apartment-prices" \
+  -H "x-k-skill-vworld-api-key: ${VWORLD_API_KEY}" \
+  --data-urlencode 'pnu=1150010400104480001' \
+  --data-urlencode 'stdrYear=2026' \
+  --data-urlencode 'pageNo=1' \
+  --data-urlencode 'numOfRows=1000' \
+  --data-urlencode 'dongNm=101' \
+  --data-urlencode 'hoNm=1601' \
+  --data-urlencode 'domain=apartment-price-mcp.warmjin.com'
 ```
 
 나이스 학교 검색·급식 식단 예시 (`KEDU_INFO_KEY` 필요). 급식은 교육청 코드(`ATPT_OFCDC_SC_CODE`)와 학교 코드(`SD_SCHUL_CODE`)가 필요하므로 보통 아래 순서로 호출한다.
