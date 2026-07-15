@@ -46,6 +46,8 @@ client/skill -> k-skill-proxy -> upstream public API
 - `GET /v1/kr-whois/domain` (KISA WHOIS `.kr`/`.한국` 도메인 조회, `DATA_GO_KR_API_KEY`)
 - `GET /v1/kr-whois/ip` (KISA WHOIS IPv4/IPv6 조회, `DATA_GO_KR_API_KEY`)
 - `GET /v1/kr-whois/as` (KISA WHOIS AS 번호 조회, `DATA_GO_KR_API_KEY`)
+- `GET /v1/vworld/search` (VWorld 단지명·지번 검색, 호출자 `x-k-skill-vworld-api-key` 헤더 필요)
+- `GET /v1/vworld/apartment-prices` (VWorld 공동주택 공시가격 조회, 호출자 `x-k-skill-vworld-api-key` 헤더 필요)
 - `GET /B552584/:service/:operation` (허용된 AirKorea route passthrough)
 
 ## 권장 환경변수
@@ -89,9 +91,11 @@ client/skill -> k-skill-proxy -> upstream public API
 - 대신 read-only / allowlisted endpoint / cache / rate limit 을 유지한다.
 - 문제가 생기면 그때 인증이나 더 강한 방어를 덧붙인다.
 
+VWorld 두 경로는 Cloudflare Worker와 VWorld 사이의 네트워크 호환 문제를 우회하는 BYOK 예외다. 키는 프록시 환경에 저장하지 않고 호출자가 HTTPS 전용 헤더로 위임한다. 프록시는 키를 고정된 VWorld 두 경로에만 전달하며, 리다이렉트와 쿼리스트링 `key`를 거부한다. 응답은 허용 필드만 새 JSON으로 투영하고 스트리밍 크기를 2 MiB로 제한하며 `private, no-store`로 외부 캐시를 막는다. 단지 검색 성공만 키 원문 대신 SHA-256 범위로 분리된 VWorld 전용 16 MiB 내부 캐시를 사용하고, 공시가격 페이지는 다중 페이지 시점 일관성을 위해 캐시하지 않는다.
+
 ## 사용법
 
-추가 client API 레이어는 불필요합니다. 필요한 쿼리를 그대로 프록시에 넣으면 되고, 프록시가 upstream API key 만 서버에서 주입합니다.
+일반 경로는 필요한 쿼리를 그대로 프록시에 넣으면 프록시가 upstream API key를 서버에서 주입합니다. VWorld BYOK 경로만 호출자가 `x-k-skill-vworld-api-key` 헤더를 제공합니다.
 
 요약 endpoint:
 
