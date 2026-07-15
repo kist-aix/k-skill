@@ -245,7 +245,7 @@ function projectUntruncatedString(value, apiKey) {
   return redactCredential(value, apiKey);
 }
 
-function projectVWorldBody(operation, body, apiKey) {
+function projectVWorldBody(operation, body, apiKey, params = null) {
   let payload;
   try {
     payload = JSON.parse(body);
@@ -254,6 +254,10 @@ function projectVWorldBody(operation, body, apiKey) {
     error.code = "upstream_error";
     error.statusCode = 502;
     throw error;
+  }
+
+  if (params) {
+    assertMatchingRequestIdentity(operation, payload, params);
   }
 
   if (operation === "search") {
@@ -361,10 +365,236 @@ async function readBoundedResponseBody(response, maxBytes = MAX_RESPONSE_BYTES) 
   }
 }
 
+function parseStrictPositiveIntegerString(value) {
+  const text = String(value ?? "");
+  if (!/^\d+$/.test(text)) {
+    return null;
+  }
+  const number = Number(text);
+  if (!Number.isSafeInteger(number) || number < 1) {
+    return null;
+  }
+  return number;
+}
+
+function parseStrictNonNegativeIntegerString(value) {
+  const text = String(value ?? "");
+  if (!/^\d+$/.test(text)) {
+    return null;
+  }
+  const number = Number(text);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    return null;
+  }
+  return number;
+}
+
+function assertMatchingRequestIdentity(operation, payload, params) {
+  if (!params) {
+    return;
+  }
+
+  if (operation === "search") {
+    const response = payload?.response;
+    // Non-OK search envelopes are projected into a fixed ERROR body by
+    // projectVWorldBody. Only successful identities need fail-closed checks.
+    if (response?.status !== "OK") {
+      return;
+    }
+    if (!Array.isArray(response?.result?.items)) {
+      const error = new Error("VWorld upstream returned an invalid search payload.");
+      error.code = "upstream_error";
+      error.statusCode = 502;
+      throw error;
+    }
+
+    const pageCandidates = [
+      response?.page,
+      response?.result?.page,
+      response?.record?.page,
+      response?.result?.record?.page
+    ];
+    const sizeCandidates = [
+      response?.size,
+      response?.result?.size,
+      response?.record?.size,
+      response?.result?.record?.size
+    ];
+    const queryCandidates = [
+      response?.result?.query,
+      response?.query,
+      response?.record?.query,
+      response?.result?.record?.query
+    ];
+    const typeCandidates = [
+      response?.result?.type,
+      response?.type,
+      response?.record?.type,
+      response?.result?.record?.type
+    ];
+    const categoryCandidates = [
+      response?.result?.category,
+      response?.category,
+      response?.record?.category,
+      response?.result?.record?.category
+    ];
+
+    for (const candidate of pageCandidates) {
+      if (candidate == null || candidate === "") {
+        continue;
+      }
+      const page = parseStrictPositiveIntegerString(candidate);
+      if (page == null || page !== params.page) {
+        const error = new Error("VWorld upstream returned a mismatched search page.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+    }
+    for (const candidate of sizeCandidates) {
+      if (candidate == null || candidate === "") {
+        continue;
+      }
+      const size = parseStrictPositiveIntegerString(candidate);
+      if (size == null || size !== params.size) {
+        const error = new Error("VWorld upstream returned a mismatched search size.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+    }
+    for (const candidate of queryCandidates) {
+      if (candidate == null || candidate === "") {
+        continue;
+      }
+      if (String(candidate) !== params.query) {
+        const error = new Error("VWorld upstream returned a mismatched search query.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+    }
+    for (const candidate of typeCandidates) {
+      if (candidate == null || candidate === "") {
+        continue;
+      }
+      if (String(candidate) !== params.type) {
+        const error = new Error("VWorld upstream returned a mismatched search type.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+    }
+    if (params.category) {
+      for (const candidate of categoryCandidates) {
+        if (candidate == null || candidate === "") {
+          continue;
+        }
+        if (String(candidate) !== params.category) {
+          const error = new Error("VWorld upstream returned a mismatched search category.");
+          error.code = "upstream_error";
+          error.statusCode = 502;
+          throw error;
+        }
+      }
+    }
+    return;
+  }
+
+  if (operation === "prices") {
+    const prices = payload?.apartHousingPrices;
+    // Non-empty resultCode is a semantic upstream failure projected as
+    // UPSTREAM_ERROR. Only successful result envelopes must match identity.
+    if (!prices || prices.resultCode !== "") {
+      return;
+    }
+    if (!Array.isArray(prices.field)) {
+      const error = new Error("VWorld upstream returned an invalid apartment-price payload.");
+      error.code = "upstream_error";
+      error.statusCode = 502;
+      throw error;
+    }
+
+    const totalCount = parseStrictNonNegativeIntegerString(prices.totalCount);
+    const pageNo = parseStrictPositiveIntegerString(prices.pageNo);
+    const numOfRows = parseStrictPositiveIntegerString(prices.numOfRows);
+    if (totalCount == null || pageNo == null || numOfRows == null) {
+      const error = new Error("VWorld upstream returned an invalid apartment-price payload.");
+      error.code = "upstream_error";
+      error.statusCode = 502;
+      throw error;
+    }
+    if (pageNo !== params.pageNo || numOfRows !== params.numOfRows) {
+      const error = new Error("VWorld upstream returned a mismatched apartment-price page.");
+      error.code = "upstream_error";
+      error.statusCode = 502;
+      throw error;
+    }
+
+    for (const record of prices.field) {
+      if (record == null || typeof record !== "object") {
+        const error = new Error("VWorld upstream returned an invalid apartment-price row.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+      if (record.pnu != null && String(record.pnu) !== "" && String(record.pnu) !== params.pnu) {
+        const error = new Error("VWorld upstream returned a mismatched apartment-price pnu.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+      if (
+        record.stdrYear != null &&
+        String(record.stdrYear) !== "" &&
+        String(record.stdrYear) !== params.stdrYear
+      ) {
+        const error = new Error("VWorld upstream returned a mismatched apartment-price year.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+      if (
+        params.dongNm &&
+        record.dongNm != null &&
+        String(record.dongNm) !== "" &&
+        String(record.dongNm) !== params.dongNm
+      ) {
+        const error = new Error("VWorld upstream returned a mismatched apartment-price dong.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+      if (
+        params.hoNm &&
+        record.hoNm != null &&
+        String(record.hoNm) !== "" &&
+        String(record.hoNm) !== params.hoNm
+      ) {
+        const error = new Error("VWorld upstream returned a mismatched apartment-price unit.");
+        error.code = "upstream_error";
+        error.statusCode = 502;
+        throw error;
+      }
+    }
+    return;
+  }
+
+  const error = new Error("Unsupported VWorld operation.");
+  error.code = "proxy_error";
+  error.statusCode = 500;
+  throw error;
+}
+
 function isVWorldSuccessBody(operation, body, params = null) {
   let payload;
   try {
     payload = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  try {
+    assertMatchingRequestIdentity(operation, payload, params);
   } catch {
     return false;
   }
@@ -373,29 +603,16 @@ function isVWorldSuccessBody(operation, body, params = null) {
   }
   if (operation === "prices") {
     const prices = payload?.apartHousingPrices;
-    const totalCount = Number(prices?.totalCount);
-    const pageNo = Number(prices?.pageNo);
-    const numOfRows = Number(prices?.numOfRows);
-    const structurallyComplete = (
+    const totalCount = parseStrictNonNegativeIntegerString(prices?.totalCount);
+    const pageNo = parseStrictPositiveIntegerString(prices?.pageNo);
+    const numOfRows = parseStrictPositiveIntegerString(prices?.numOfRows);
+    return (
       prices?.resultCode === "" &&
-      /^\d+$/.test(prices?.totalCount || "") &&
-      /^\d+$/.test(prices?.pageNo || "") &&
-      /^\d+$/.test(prices?.numOfRows || "") &&
-      Number.isSafeInteger(totalCount) &&
-      totalCount >= 0 &&
-      Number.isSafeInteger(pageNo) &&
-      pageNo >= 1 &&
-      Number.isSafeInteger(numOfRows) &&
-      numOfRows >= 1 &&
+      totalCount != null &&
+      pageNo != null &&
+      numOfRows != null &&
       Array.isArray(prices?.field)
     );
-    if (!structurallyComplete) {
-      return false;
-    }
-    if (params) {
-      return pageNo === params.pageNo && numOfRows === params.numOfRows;
-    }
-    return true;
   }
   return false;
 }
@@ -469,7 +686,7 @@ async function proxyVWorldRequest({
     throw error;
   }
 
-  const body = projectVWorldBody(operation, responseBody, credential);
+  const body = projectVWorldBody(operation, responseBody, credential, params);
   return {
     statusCode: response.status,
     contentType: "application/json; charset=utf-8",
@@ -480,6 +697,7 @@ async function proxyVWorldRequest({
 module.exports = {
   VWORLD_API_BASE_URL,
   VWORLD_CREDENTIAL_HEADER,
+  assertMatchingRequestIdentity,
   buildVWorldUrl,
   projectVWorldBody,
   isVWorldSuccessBody,

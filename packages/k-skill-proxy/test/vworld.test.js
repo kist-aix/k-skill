@@ -140,6 +140,30 @@ test("requires a credential and recognizes only semantic VWorld successes", asyn
     isVWorldSuccessBody("prices", '{"apartHousingPrices":{"resultCode":"","field":[]}}'),
     false
   );
+  assert.equal(
+    isVWorldSuccessBody(
+      "prices",
+      '{"apartHousingPrices":{"resultCode":"","totalCount":"1","pageNo":"2","numOfRows":"1000","field":[]}}',
+      { pageNo: 1, numOfRows: 1000, pnu: "1150010400104480001", stdrYear: "2026" }
+    ),
+    false
+  );
+  assert.equal(
+    isVWorldSuccessBody(
+      "prices",
+      '{"apartHousingPrices":{"resultCode":"","totalCount":"1","pageNo":"1","numOfRows":"1000","field":[{"pnu":"9999999999999999999","stdrYear":"2026"}]}}',
+      { pageNo: 1, numOfRows: 1000, pnu: "1150010400104480001", stdrYear: "2026" }
+    ),
+    false
+  );
+  assert.equal(
+    isVWorldSuccessBody(
+      "search",
+      '{"response":{"status":"OK","result":{"items":[],"page":"2","query":"other"}}}',
+      { page: 1, size: 100, query: "강나루현대", type: "place", category: null }
+    ),
+    false
+  );
 });
 
 test("response projection replaces upstream error codes with fixed safe values", () => {
@@ -424,7 +448,7 @@ test("VWorld routes do not cache structurally incomplete success envelopes", asy
   assert.equal(priceCalls, 2);
 });
 
-test("VWorld apartment-price route does not cache any page response", async (t) => {
+test("VWorld apartment-price route rejects mismatched page identities and caches nothing", async (t) => {
   const originalFetch = global.fetch;
   let calls = 0;
   global.fetch = async () => {
@@ -453,12 +477,88 @@ test("VWorld apartment-price route does not cache any page response", async (t) 
 
   const wrongPage = await app.inject(request);
   const recovered = await app.inject(request);
-  const cached = await app.inject(request);
+  const again = await app.inject(request);
 
-  assert.equal(wrongPage.json().apartHousingPrices.pageNo, "2");
+  assert.equal(wrongPage.statusCode, 502);
+  assert.equal(wrongPage.json().error, "upstream_error");
+  assert.equal(recovered.statusCode, 200);
   assert.equal(recovered.json().apartHousingPrices.pageNo, "1");
-  assert.deepEqual(cached.json(), recovered.json());
-  assert.equal(calls, 3, "neither a wrong page nor a recovered price page may be cached");
+  assert.equal(again.statusCode, 200);
+  assert.deepEqual(again.json(), recovered.json());
+  assert.equal(calls, 3, "rejected identities and successful price pages must never be cached");
+});
+
+test("VWorld apartment-price route rejects mismatched row pnu/year/unit identity", async (t) => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => Response.json({
+    apartHousingPrices: {
+      resultCode: "",
+      resultMsg: "",
+      totalCount: "1",
+      pageNo: "1",
+      numOfRows: "1000",
+      field: [{
+        pnu: "9999999999999999999",
+        stdrYear: "2025",
+        dongNm: "102",
+        hoNm: "9999",
+        pblntfPc: "1"
+      }]
+    }
+  });
+  const app = buildServer({ env: { KSKILL_PROXY_CACHE_TTL_MS: "60000" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/v1/vworld/apartment-prices?pnu=1150010400104480001&stdrYear=2026&pageNo=1&numOfRows=1000&dongNm=101&hoNm=1601",
+    headers: { "x-k-skill-vworld-api-key": "delegated-secret" }
+  });
+
+  assert.equal(response.statusCode, 502);
+  assert.equal(response.json().error, "upstream_error");
+  assert.match(response.json().message, /mismatched apartment-price/i);
+});
+
+test("VWorld search route rejects mismatched pagination identity before caching", async (t) => {
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return Response.json({
+      response: {
+        status: "OK",
+        result: {
+          items: [{ id: "1", title: "ok", address: { parcel: "a", road: "b" } }],
+          page: "9",
+          size: "100",
+          query: "other",
+          type: "place"
+        }
+      }
+    });
+  };
+  const app = buildServer({ env: { KSKILL_PROXY_CACHE_TTL_MS: "60000" } });
+  t.after(async () => {
+    global.fetch = originalFetch;
+    await app.close();
+  });
+
+  const request = {
+    method: "GET",
+    url: "/v1/vworld/search?query=강나루현대&type=place&page=1&size=100",
+    headers: { "x-k-skill-vworld-api-key": "delegated-secret" }
+  };
+  const first = await app.inject(request);
+  const second = await app.inject(request);
+
+  assert.equal(first.statusCode, 502);
+  assert.equal(first.json().error, "upstream_error");
+  assert.equal(second.statusCode, 502);
+  assert.equal(calls, 2, "mismatched search identities must not be cached");
 });
 
 test("credential-scoped cache and projected responses reject reversible credential encodings", async (t) => {
