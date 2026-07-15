@@ -6,6 +6,7 @@ import os
 import pathlib
 import unittest
 import urllib.parse
+import urllib.error
 from unittest import mock
 
 
@@ -103,6 +104,33 @@ class BuildingRegisterHelperTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("시간이 초과", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_address_geocode_missing_kakao_key_is_not_building_key_error(self):
+        body = io.BytesIO(json.dumps({
+            "error": "upstream_not_configured",
+            "message": "KAKAO_REST_API_KEY is not configured on the proxy server."
+        }).encode("utf-8"))
+        error = urllib.error.HTTPError(
+            "https://example.test/v1/kakao-local/geocode?q=test",
+            503,
+            "Service Unavailable",
+            {},
+            body,
+        )
+        with mock.patch.object(building_register.urllib.request, "urlopen", side_effect=error):
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = building_register.run([
+                    "title",
+                    "--address",
+                    "서울 강남구 삼성동 159",
+                    "--proxy-base-url",
+                    "https://example.test",
+                ])
+        self.assertEqual(code, 1)
+        message = stderr.getvalue()
+        self.assertIn("Kakao Local", message)
+        self.assertNotIn("건축물대장 API 키", message)
 
     def test_direct_xml_rejects_invalid_pagination_metadata(self):
         response = mock.MagicMock()

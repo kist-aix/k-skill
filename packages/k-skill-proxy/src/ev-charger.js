@@ -6,6 +6,7 @@ const EV_CHARGER_OPERATIONS = Object.freeze({
   status: "getChargerStatus"
 });
 const AUTH_RESULT_CODES = new Set(["20", "21", "22", "30", "31", "32", "33"]);
+const EV_CHARGER_UPSTREAM_TIMEOUT_MS = 90000;
 
 function trimOrNull(value) {
   if (value === undefined || value === null) return null;
@@ -117,9 +118,9 @@ function extractEvChargerPayload(payload) {
     throw new Error("EV charger upstream returned an invalid response envelope.");
   }
   const header = semanticHeader(payload);
-  const resultCode = trimOrNull(header?.resultCode);
+  const resultCode = trimOrNull(header?.resultCode ?? payload.resultCode);
   if (resultCode && !new Set(["0", "00", "03"]).has(resultCode)) {
-    const error = new Error(trimOrNull(header?.resultMsg) || `resultCode=${resultCode}`);
+    const error = new Error(trimOrNull(header?.resultMsg ?? payload.resultMsg) || `resultCode=${resultCode}`);
     error.resultCode = resultCode;
     throw error;
   }
@@ -176,7 +177,7 @@ async function fetchEvCharger({ params, serviceKey, fetchImpl = global.fetch }) 
 
   let response;
   try {
-    response = await fetchImpl(url.toString(), { signal: AbortSignal.timeout(20000) });
+    response = await fetchImpl(url.toString(), { signal: AbortSignal.timeout(EV_CHARGER_UPSTREAM_TIMEOUT_MS) });
   } catch {
     return errorResult("upstream_unavailable", "EV charger upstream request failed.");
   }
@@ -201,8 +202,8 @@ async function fetchEvCharger({ params, serviceKey, fetchImpl = global.fetch }) 
     return errorResult("upstream_invalid_response", "EV charger upstream did not return valid JSON.");
   }
   const header = semanticHeader(payload);
-  const resultCode = trimOrNull(header?.resultCode);
-  const resultMessage = trimOrNull(header?.resultMsg) || "";
+  const resultCode = trimOrNull(header?.resultCode ?? payload.resultCode);
+  const resultMessage = trimOrNull(header?.resultMsg ?? payload.resultMsg) || "";
   if (AUTH_RESULT_CODES.has(resultCode) || /SERVICE[ _]?KEY|AUTH/i.test(resultMessage)) {
     return errorResult(
       "upstream_forbidden",
@@ -232,6 +233,7 @@ async function fetchEvCharger({ params, serviceKey, fetchImpl = global.fetch }) 
 
 module.exports = {
   EV_CHARGER_BASE_URL,
+  EV_CHARGER_UPSTREAM_TIMEOUT_MS,
   EV_CHARGER_OPERATIONS,
   extractEvChargerPayload,
   fetchEvCharger,

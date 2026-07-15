@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { buildServer } = require("../src/server");
 const {
   EV_CHARGER_BASE_URL,
+  EV_CHARGER_UPSTREAM_TIMEOUT_MS,
   extractEvChargerPayload,
   fetchEvCharger,
   normalizeEvChargerQuery
@@ -95,6 +96,24 @@ test("EV charger payload extraction accepts direct and response envelopes", () =
       body: { pageNo: 1, numOfRows: 10, totalCount: 0, items: "" }
     }
   }).items, []);
+});
+
+test("EV charger upstream timeout covers slow data.go.kr responses", () => {
+  assert.equal(EV_CHARGER_UPSTREAM_TIMEOUT_MS, 90000);
+});
+
+test("EV charger payload extraction rejects flat semantic auth failures", () => {
+  assert.throws(
+    () => extractEvChargerPayload({
+      resultCode: "30",
+      resultMsg: "SERVICE KEY IS NOT REGISTERED",
+      pageNo: 1,
+      numOfRows: 10,
+      totalCount: 0,
+      items: ""
+    }),
+    /SERVICE KEY|resultCode=30/i
+  );
 });
 
 test("EV charger fetch resolves location codes, injects the server key, and never leaks the key", async () => {

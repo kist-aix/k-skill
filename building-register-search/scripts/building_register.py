@@ -25,6 +25,10 @@ DEFAULT_SECRETS_PATH = pathlib.Path("~/.config/k-skill/secrets.env").expanduser(
 UPSTREAM_URL = "https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo"
 PROXY_DOWN_MSG = "설정된 k-skill-proxy 프록시 서버가 응답하지 않습니다. 잠시 후 재시도하거나 운영자에게 문의하세요."
 PROXY_NOT_CONFIGURED_MSG = "k-skill-proxy에 건축물대장 API 키가 설정되어 있지 않습니다. 운영자에게 문의하세요."
+KAKAO_NOT_CONFIGURED_MSG = (
+    "k-skill-proxy에 Kakao Local API 키가 설정되어 있지 않습니다. "
+    "주소 조회는 Kakao geocode가 필요합니다. 운영자에게 문의하거나 PNU/개별 필지를 사용하세요."
+)
 
 
 class HelperError(RuntimeError):
@@ -184,6 +188,9 @@ def http_get_json(url: str, timeout: int, via_proxy: bool) -> Dict[str, Any]:
         except json.JSONDecodeError:
             payload = {}
         if via_proxy and error.code == 503 and payload.get("error") == "upstream_not_configured":
+            message = str(payload.get("message") or "")
+            if "KAKAO" in message.upper() or "/kakao-local/" in url:
+                raise HelperError(KAKAO_NOT_CONFIGURED_MSG) from error
             raise HelperError(PROXY_NOT_CONFIGURED_MSG) from error
         raise HelperError(str(payload.get("message") or f"API HTTP 오류: {error.code} {error.reason}")) from error
     except urllib.error.URLError as error:

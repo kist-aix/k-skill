@@ -173,7 +173,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--proxy-base-url", default=os.environ.get("KSKILL_PROXY_BASE_URL", DEFAULT_PROXY_BASE_URL))
     parser.add_argument("--direct", action="store_true")
     parser.add_argument("--secrets-path", default=str(DEFAULT_SECRETS_PATH))
-    parser.add_argument("--timeout", type=int, default=20)
+    parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
 

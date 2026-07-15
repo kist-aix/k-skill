@@ -112,6 +112,10 @@ class EvChargerHelperTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("API 키가 설정되어 있지 않습니다", stderr.getvalue())
 
+    def test_default_timeout_covers_slow_upstream(self):
+        args = ev_charger.parse_args(["info", "--location", "서울 강남구"])
+        self.assertGreaterEqual(args.timeout, 90)
+
     def test_text_and_json_outputs_are_supported(self):
         payload = {
             "operation": "info",
