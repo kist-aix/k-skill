@@ -2112,6 +2112,24 @@ function buildServer({ env = process.env, provider = null, now = () => new Date(
     }
   });
 
+  // Endpoint usage stats: count each matched route and emit one structured log line
+  // per request so daily/weekly/monthly totals can be derived from the server logs.
+  // /health is excluded because health checks are operational noise, not usage.
+  const routeUsageStats = new Map();
+  app.decorate("routeUsageStats", routeUsageStats);
+  app.addHook("onResponse", async (request, reply) => {
+    const matchedRoute = request.routeOptions && request.routeOptions.url;
+    if (matchedRoute === "/health") {
+      return;
+    }
+    // Aggregate all unmatched requests under one key. Using the raw 404 path
+    // here would let arbitrary input grow the in-memory map and Loki labels
+    // without bound.
+    const route = matchedRoute || "__unmatched__";
+    routeUsageStats.set(route, (routeUsageStats.get(route) || 0) + 1);
+    app.log.info({ routeUsage: true, route, statusCode: reply.statusCode }, "route usage");
+  });
+
   app.get("/health", async () => {
     const naverSearchKeysPresent = Boolean(config.naverSearchClientId && config.naverSearchClientSecret);
     return {
