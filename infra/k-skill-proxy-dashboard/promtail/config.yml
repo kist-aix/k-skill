@@ -1,0 +1,29 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /positions/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: k-skill-proxy
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: k-skill-proxy
+          __path__: /var/log/k-skill-proxy/proxy.log
+    pipeline_stages:
+      # proxy.log lines are pino JSON. Only usage lines carry `route`
+      # (emitted by the proxy's onResponse hook with routeUsage: true), so
+      # non-usage lines simply get no route label and are filtered out in
+      # LogQL queries with {job="k-skill-proxy", route!=""}.
+      - json:
+          expressions:
+            routeUsage: routeUsage
+            route: route
+            statusCode: statusCode
+      - labels:
+          route:

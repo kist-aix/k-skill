@@ -1,0 +1,13 @@
+[Unit]
+Description=Loki log store for k-skill-proxy usage dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/apps/k-skill-proxy-dashboard/bin/loki -config.file=%h/apps/k-skill-proxy-dashboard/gpu01/loki.yml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

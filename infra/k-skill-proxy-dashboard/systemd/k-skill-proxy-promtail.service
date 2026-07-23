@@ -1,0 +1,13 @@
+[Unit]
+Description=Promtail shipper for k-skill-proxy logs
+After=network-online.target k-skill-proxy-loki.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/apps/k-skill-proxy-dashboard/bin/promtail -config.file=%h/apps/k-skill-proxy-dashboard/gpu01/promtail.yml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

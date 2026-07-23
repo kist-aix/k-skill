@@ -62,3 +62,22 @@ systemctl --user status k-skill-proxy-tunnel.service
 ```
 
 The `.env` file stays on `gpu01` and must not be copied into the repository.
+
+## Usage stats dashboard
+
+Endpoint call statistics (`routeUsage` log lines) are collected into Loki by
+Promtail and visualized in Grafana at
+`https://k-skill-proxy-dashboard.nomadamas.org` (Grafana login required,
+admin credentials live in
+`/data/home/jeffrey/apps/k-skill-proxy-dashboard/grafana.env`, mode 600 —
+never commit it).
+
+The stack runs as systemd user services
+(`k-skill-proxy-{loki,promtail,grafana}.service`) installed by
+`infra/k-skill-proxy-dashboard/setup-gpu01.sh`; see
+[`infra/k-skill-proxy-dashboard/README.md`](../infra/k-skill-proxy-dashboard/README.md)
+for the full layout. Grafana is exposed through the same cloudflared tunnel
+(`k-skill-proxy-dashboard.nomadamas.org -> http://localhost:3200`).
+
+Note: `route` labels (and therefore per-endpoint panels) only appear once
+the proxy build that emits `routeUsage` log lines is deployed to `main`.

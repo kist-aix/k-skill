@@ -1,0 +1,38 @@
+# gpu01 binary-mode Loki config. Paths are absolute because systemd starts
+# the binary outside the app directory.
+auth_enabled: false
+
+server:
+  http_listen_address: 127.0.0.1
+  http_listen_port: 3100
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /data/home/jeffrey/apps/k-skill-proxy-dashboard/data/loki
+  storage:
+    filesystem:
+      chunks_directory: /data/home/jeffrey/apps/k-skill-proxy-dashboard/data/loki/chunks
+      rules_directory: /data/home/jeffrey/apps/k-skill-proxy-dashboard/data/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # 90 days of proxy logs is plenty for daily/weekly/monthly usage stats.
+  retention_period: 2160h
+
+compactor:
+  working_directory: /data/home/jeffrey/apps/k-skill-proxy-dashboard/data/loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem

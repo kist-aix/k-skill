@@ -1,0 +1,14 @@
+[Unit]
+Description=Grafana dashboard for k-skill-proxy usage stats
+After=network-online.target k-skill-proxy-loki.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/apps/k-skill-proxy-dashboard/grafana.env
+ExecStart=%h/apps/k-skill-proxy-dashboard/bin/grafana/bin/grafana server --homepath %h/apps/k-skill-proxy-dashboard/bin/grafana
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

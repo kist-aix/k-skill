@@ -1,0 +1,130 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0 },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true, "calcs": ["sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "expr": "sum by (route) (count_over_time({job=\"k-skill-proxy\", route!=\"\"}[$__interval]))",
+          "legendFormat": "{{route}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Endpoint calls over time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "align": "auto", "filterable": true },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [{ "id": "displayName", "value": "Calls" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "id": 2,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Calls", "desc": true }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "expr": "sum by (route) (count_over_time({job=\"k-skill-proxy\", route!=\"\"}[$__range]))",
+          "legendFormat": "{{route}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Calls per endpoint (selected time range)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": { "excludeByName": { "Time": true }, "renameByName": { "route": "Endpoint" } }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "align": "auto", "filterable": true },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [{ "id": "displayName", "value": "Calls" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "id": 3,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Calls", "desc": true }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "expr": "sum by (statusCode) (count_over_time({job=\"k-skill-proxy\", route!=\"\"} | json [$__range]))",
+          "legendFormat": "{{statusCode}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Status code breakdown (selected time range)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": { "excludeByName": { "Time": true }, "renameByName": { "statusCode": "Status" } }
+        }
+      ],
+      "type": "table"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 41,
+  "tags": ["k-skill-proxy"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {
+    "quick_ranges": [
+      { "display": "Today", "from": "now/d", "to": "now" },
+      { "display": "This week", "from": "now/w", "to": "now" },
+      { "display": "This month", "from": "now/M", "to": "now" },
+      { "display": "Last 7 days", "from": "now-7d", "to": "now" },
+      { "display": "Last 30 days", "from": "now-30d", "to": "now" }
+    ]
+  },
+  "timezone": "Asia/Seoul",
+  "title": "k-skill-proxy endpoint usage",
+  "uid": "k-skill-proxy-usage",
+  "version": 1
+}

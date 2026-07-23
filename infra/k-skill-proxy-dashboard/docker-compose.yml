@@ -1,0 +1,57 @@
+name: k-skill-proxy-dashboard
+
+# Usage stats dashboard for k-skill-proxy.
+# Loki stores the proxy's JSON logs, Promtail tails proxy.log, Grafana
+# visualizes per-endpoint call counts. Grafana is the only exposed port and
+# is meant to sit behind the cloudflared tunnel hostname
+# k-skill-proxy-dashboard.nomadamas.org.
+
+services:
+  loki:
+    image: grafana/loki:3.5.3
+    command: -config.file=/etc/loki/local-config.yml
+    volumes:
+      - ./loki/local-config.yml:/etc/loki/local-config.yml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+    networks: [dashboard]
+
+  promtail:
+    image: grafana/promtail:3.5.3
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./promtail/config.yml:/etc/promtail/config.yml:ro
+      # Mount the directory that contains the systemd-managed proxy log.
+      # Override KSKILL_PROXY_LOG_DIR in .env if the app lives elsewhere.
+      - ${KSKILL_PROXY_LOG_DIR:-/data/home/jeffrey/apps/k-skill-proxy}:/var/log/k-skill-proxy:ro
+      - promtail-positions:/positions
+    depends_on: [loki]
+    restart: unless-stopped
+    networks: [dashboard]
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?set GRAFANA_ADMIN_USER in .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3200}
+    ports:
+      - "127.0.0.1:3200:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [loki]
+    restart: unless-stopped
+    networks: [dashboard]
+
+volumes:
+  loki-data:
+  promtail-positions:
+  grafana-data:
+
+networks:
+  dashboard:
